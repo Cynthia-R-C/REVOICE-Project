@@ -1,0 +1,17 @@
+# Ignore datasets
+data/
+*.wav
+*.mp3
+*.csv
+
+raw_data/
+*.wav
+*.mp3
+*.csv
+
+
+# Ignore already cloned repos or models
+Retrieval-based-Voice-Conversion-WebUI/
+*.pt
+*.ckpt
+*.pth
