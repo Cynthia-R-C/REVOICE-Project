@@ -10,8 +10,8 @@ raw_data/
 *.csv
 
 
-# Ignore already cloned repos or models
-Retrieval-based-Voice-Conversion-WebUI/
-*.pt
-*.ckpt
-*.pth
+# # Ignore already cloned repos or models
+# Retrieval-based-Voice-Conversion-WebUI/
+# *.pt
+# *.ckpt
+# *.pth
