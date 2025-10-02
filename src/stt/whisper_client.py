@@ -33,6 +33,7 @@ sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 try:
     sock.connect((HOST, PORT))
     print(f"Connected to server at {HOST}:{PORT}. Speak into your mic...")
+    sock.send('stt'.encode('utf-8'))  # initial message to server, specifies client type
 except Exception as e:
     print(f"Failed to connect: {e}")
     sys.exit(1)

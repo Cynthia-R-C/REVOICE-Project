@@ -4,6 +4,8 @@ from whisper_online import *  #
 # Add CoquiTTS stuff
 from TTS.api import TTS
 import torch   # for running on GPU
+from threading import Thread
+import queue
 
 import sys
 import argparse
@@ -45,6 +47,10 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Initialize CoquiTTS with the target model name
 tts = TTS("tts_models/en/ljspeech/fast_pitch").to(device)
+
+# Toggles
+SAVE_TRANSCRIPT = True
+tts_flag = False  # becomes true when a TTS client connects to the server
 
 # warm up the ASR because the very first transcribe takes more time than the others. 
 # Test results in https://github.com/ufal/whisper_streaming/pull/81
@@ -102,12 +108,13 @@ import soundfile
 # next client should be served by a new instance of this object
 class ServerProcessor:
 
-    def __init__(self, c, online_asr_proc, min_chunk, out_file):
+    def __init__(self, c, online_asr_proc, min_chunk, out_file=None, tts_queue=None):
         self.connection = c
         self.online_asr_proc = online_asr_proc
         self.min_chunk = min_chunk
 
-        self.out_file = out_file  # for storing transcription results in a text file
+        self.out_file = out_file  # for storing transcription results in a text file; None if not toggled on
+        self.tts_queue = tts_queue  # queue for TTS text to be sent to TTS client
 
         self.last_end = None
 
@@ -182,19 +189,39 @@ class ServerProcessor:
             return None
 
     def send_result(self, o):
-        '''Edited to not only send the current transcript to the client but to also update the transcript text file'''
+        '''Edited to do all of the following:
+         1. Send the current transcript to the STT client
+         2. Update the transcript text file if toggled'''
         msg = self.format_output_transcript(o)
         if msg is not None:
-            self.connection.send(msg)
+            self.connection.send(msg)  # send to STT client
+            self.put_to_tts(self.strip_timestamps(msg))
         
-        # Write the text to the output transcript file
-        txt = self.format_output_transcript_text_only(o)
-        if txt is not None:
-            self.out_file.write(txt)
+        if SAVE_TRANSCRIPT:
+            # Write the text to the output transcript file
+            txt = self.format_output_transcript_text_only(o)
+            if txt is not None:
+                self.out_file.write(txt)
+
+    def strip_timestamps(self, txt):
+        '''Strips the timestamps from the text'''
+        parts = txt.split(' ')
+        if len(parts) > 2:
+            return ' '.join(parts[2:])  # join all parts after the first two (the timestamps)
+        else:
+            return ''  # if there is no text after the timestamps, return empty string
+
+    def put_to_tts(self, txt):
+        '''Puts the newly generated STT text to the TTS queue;
+        Will be called no matter if TTS flag is on or off
+        Assumes tts_queue is not None
+        Assumes text is not None'''
+        self.tts_queue.put(txt)
+        logger.info("New text added to TTS queue.")
 
 
     def process(self):
-        '''handle one client connection'''
+        '''handle one stt client connection'''
         self.online_asr_proc.init()
         while True:
             a, startTimes = self.receive_audio_chunk()
@@ -203,7 +230,7 @@ class ServerProcessor:
             self.online_asr_proc.insert_audio_chunk(a)
             o = online.process_iter()
             try:
-                self.send_result(o)  # sends it to the client
+                self.send_result(o)  # sends it to the client and if toggled on to the transcript file and TTS queue
 
                 # Now add latencies of that audio just then to latencies list
                 endTime = time.perf_counter()
@@ -236,30 +263,143 @@ def calc_wer(transcript_path, ref_path):
 
 
 
-# server loop
+class Server:
+    Clients = [] # list of client threads
 
-with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:  # each new client connection
-    s.bind((args.host, args.port))
-    s.listen(1)
-    logger.info('Listening on'+str((args.host, args.port)))
-    while True:
-        conn, addr = s.accept()
-        logger.info('Connected to client on {}'.format(addr))
-        out_file = open('transcript.txt', 'w')  # open a new file for writing the transcript
+    def __init__(self, sock, HOST, PORT):
+        '''Initializes TCP socket over IPv4. Accepts 2 connections max.'''
+        self.tts_queue = queue.Queue()  # queue for TTS text to be sent to TTS client
+        self.socket = sock
+        self.socket.bind((HOST, PORT))
+        self.socket.listen(2)  # allow 2 clients to wait in line
+        logger.info('Listening on'+str((HOST, PORT)))
+
+    def listen(self):
+        '''Listens for new clients and spawns a new thread for each client'''
+        while True:
+            conn, addr = self.socket.accept()  # conn is the socket, used conn instead of socket to stay consistent with the dev naming system for the original whisper online server
+            logger.info('Connected to client on {}'.format(addr))
+
+            # First message will be the client type = tts or stt
+            client_type = conn.recv(1024).decode('utf-8').strip()
+            client = {'conn/socket': conn, 'addr': addr, 'type': client_type}
+            logger.info(f"{client_type} client has connected.")
+
+            Server.Clients.append(client)
+
+            if client_type == 'tts':
+                client_thread = Thread(target=self.handle_tts_client, args=(client,self.tts_queue,))
+
+            elif client_type == 'stt':
+                client_thread = Thread(target=self.handle_stt_client, args=(client,self.tts_queue,))
+                
+            client_thread.start()
+
+    def handle_tts_client(self, client, tts_queue):
+        '''Handles one TTS client connection'''
+        tts_flag = True  # set the TTS flag to true when a TTS client connects to the server
+        #client_type = client['type']
+        conn = client['conn/socket']
+
+        while True:
+            try:
+                # As long as queue is not empty, get text from queue, convert it to audio, and send it over
+                if not tts_queue.empty():
+                    text = tts_queue.get()  # this should also remove it from the queue
+                    logger.debug("Text received from TTS queue.")
+                    # Generate speech
+                    logger.debug("GENERATING TTS audio...")
+                    wav = tts.tts(text)
+                    logger.debug("TTS audio generated from text.")
+                    wav = np.array(wav)
+                    logger.debug("wav shape:", wav.shape, "dtype:", wav.dtype)
+                    # Convert to 16-bit PCM
+                    wav_pcm = (wav * 32767).astype(np.int16)
+                    # Maybe resample to 16kHz if needed later? Is this necessary?
+                    # Send the packet of audio data
+                    try:
+                        logger.debug("Sending audio to TTS client...")
+                        conn.sendall(wav_pcm.tobytes())
+                        logger.debug("Audio sent to TTS client.")
+                    except BrokenPipeError:  # in case something goes wrong with the connection
+                        logger.info("broken pipe -- connection closed?")
+                        break
+            
+            # To end the client connection from the terminal press Ctrl+C
+            except KeyboardInterrupt:
+                logger.info("TTS client handler stopping...")
+                break
+        
+        conn.close()
+        tts_flag = False  # set the TTS flag to false when the TTS client disconnects from the server
+        Server.Clients.remove(client)  # remove client from client list
+        logger.info('Connection to tts client closed')
+
+
+    def handle_stt_client(self, client, tts_queue):
+        '''Handles one STT client connection'''
+        client_type = client['type']
+        conn = client['conn/socket']
+        addr = client['addr']
+        
+        out_file = None
+        if SAVE_TRANSCRIPT:
+            out_file = open('transcript.txt', 'w')  # open a new file for writing the transcript
+
+        # Now keep waiting for audio from this client and process it
+        # No while true loop here, the server processor handles the while true stuff for stt
         connection = Connection(conn)
-        proc = ServerProcessor(connection, online, args.min_chunk_size, out_file)
+        proc = ServerProcessor(connection, online, args.min_chunk_size, out_file, tts_queue)
+        logger.info('Starting to process audio from STT client...')
         proc.process()
         conn.close()
-        logger.info('Connection to client closed')
+        Server.Clients.remove(client)  # remove client from client list
+        logger.info('Connection to stt client closed')
 
-        # transcription file WER calculation
-        out_file.close()
-        logger.info('Transcript file written.')
-        txt_wer = calc_wer('mrs_dalloway.txt', 'transcript.txt')
-        logger.info(f"WER: {txt_wer:.3f}")
+        if SAVE_TRANSCRIPT:
+            # transcription file WER calculation
+            out_file.close()
+            logger.info('Transcript file written.')
+            txt_wer = calc_wer('mrs_dalloway.txt', 'transcript.txt')
+            logger.info(f"WER: {txt_wer:.3f}")
 
         # Latency calculation
         logger.info(f"Average latency: {calc_avg_latency(latencies):.3f}s")
         latencies = []   # clear latencies list for next client session
 
-logger.info('Connection closed, terminating.')
+
+# Server code
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        server = Server(sock, args.host, args.port)
+        server.listen()
+
+logger.info("Server stopping...")
+sys.exit(0)
+
+### Old code from whisper_online_server.py below for reference ###
+# server loop
+# with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:  # each new client connection
+#     s.bind((args.host, args.port))
+#     s.listen(1)
+#     logger.info('Listening on'+str((args.host, args.port)))
+#     while True:
+#         conn, addr = s.accept()
+#         logger.info('Connected to client on {}'.format(addr))
+#         out_file = open('transcript.txt', 'w')  # open a new file for writing the transcript
+#         connection = Connection(conn)
+#         proc = ServerProcessor(connection, online, args.min_chunk_size, out_file)
+#         proc.process()
+#         conn.close()
+#         logger.info('Connection to client closed')
+
+#         # transcription file WER calculation
+#         out_file.close()
+#         logger.info('Transcript file written.')
+#         txt_wer = calc_wer('mrs_dalloway.txt', 'transcript.txt')
+#         logger.info(f"WER: {txt_wer:.3f}")
+
+#         # Latency calculation
+#         logger.info(f"Average latency: {calc_avg_latency(latencies):.3f}s")
+#         latencies = []   # clear latencies list for next client session
+
+# logger.info('Connection closed, terminating.')
