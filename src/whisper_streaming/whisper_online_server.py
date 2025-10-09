@@ -5,7 +5,8 @@ from whisper_online import *  #
 from TTS.api import TTS
 import torch   # for running on GPU
 from threading import Thread
-import queue
+import queue  # for TTS text queue
+import librosa  # for resampling SR
 
 import sys
 import argparse
@@ -13,7 +14,7 @@ import os
 import logging
 import numpy as np
 
-# My own edits
+# Calculating WER and latency
 import time
 from jiwer import wer
 
@@ -45,8 +46,12 @@ latencies = []    # create list of latencies to track latency of each audio chun
 # Device agnostic code
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
+# Set up TTS
 # Initialize CoquiTTS with the target model name
 tts = TTS("tts_models/en/ljspeech/fast_pitch").to(device)
+
+# TTS Constants
+TTS_SR = tts.synthesizer.output_sample_rate  # TTS sampling rate
 
 # Toggles
 SAVE_TRANSCRIPT = True
@@ -246,6 +251,8 @@ class ServerProcessor:
 
 def calc_avg_latency(latencies):
     '''Calculates the average latency given a list of latencies'''
+    if len(latencies) == 0:
+        return 0.0
     return sum(latencies) / len(latencies)
 
 def calc_wer(transcript_path, ref_path):
@@ -307,15 +314,32 @@ class Server:
                 if not tts_queue.empty():
                     text = tts_queue.get()  # this should also remove it from the queue
                     logger.debug("Text received from TTS queue.")
+
                     # Generate speech
                     logger.debug("GENERATING TTS audio...")
                     wav = tts.tts(text)
+
                     logger.debug("TTS audio generated from text.")
-                    wav = np.array(wav)
-                    logger.debug("wav shape:", wav.shape, "dtype:", wav.dtype)
+                    wav = np.array(wav)   # convert to np array to avoid memory issues
+                    #logger.debug("wav shape:", wav.shape, "dtype:", wav.dtype)
+
+                    # Debugging
+                    print(f"TTS output sample rate: {tts.synthesizer.output_sample_rate}")
+                    print(f"Original wav shape: {wav.shape}, dtype: {wav.dtype}")
+                    soundfile.write(f'original_{TTS_SR}hz.wav', wav, TTS_SR)  # Save original before resampling
+
+                    # Resample to 16kHz if needed
+                    if TTS_SR != SAMPLING_RATE:
+                        wav = librosa.resample(wav, orig_sr=TTS_SR, target_sr=SAMPLING_RATE)
+                        logger.debug(f"Resampled TTS audio from {TTS_SR}Hz to {SAMPLING_RATE}Hz.")
+
+                        # Debugging
+                        print(f"Resampled wav shape: {wav.shape}, dtype: {wav.dtype}")
+                        sf.write(f'resampled_{SAMPLING_RATE}hz.wav', wav, SAMPLING_RATE)  # Save after resampling
+
                     # Convert to 16-bit PCM
                     wav_pcm = (wav * 32767).astype(np.int16)
-                    # Maybe resample to 16kHz if needed later? Is this necessary?
+                   
                     # Send the packet of audio data
                     try:
                         logger.debug("Sending audio to TTS client...")
@@ -338,6 +362,7 @@ class Server:
 
     def handle_stt_client(self, client, tts_queue):
         '''Handles one STT client connection'''
+        global latencies   # to fix the local variable referenced before assignment error
         client_type = client['type']
         conn = client['conn/socket']
         addr = client['addr']
