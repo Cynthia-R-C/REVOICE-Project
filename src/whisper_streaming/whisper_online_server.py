@@ -17,6 +17,7 @@ import numpy as np
 # Calculating WER and latency
 import time
 from jiwer import wer
+reference_file = 'english_patient.txt'  # reference text for WER calculation
 
 logger = logging.getLogger(__name__)
 parser = argparse.ArgumentParser()
@@ -385,7 +386,7 @@ class Server:
             # transcription file WER calculation
             out_file.close()
             logger.info('Transcript file written.')
-            txt_wer = calc_wer('mrs_dalloway.txt', 'transcript.txt')
+            txt_wer = calc_wer(reference_file, 'transcript.txt')
             logger.info(f"WER: {txt_wer:.3f}")
 
         # Latency calculation
