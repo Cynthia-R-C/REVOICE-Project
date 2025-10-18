@@ -1,5 +1,5 @@
 # Ignore datasets
-libri_data/
+data/
 *.wav
 *.mp3
 *.csv
