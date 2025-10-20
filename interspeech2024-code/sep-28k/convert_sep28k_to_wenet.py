@@ -1,5 +1,5 @@
 # V2
-# Cynthia Chen 10/17/2025
+# Cynthia Chen 10/18/2025
 
 #!/usr/bin/env python3
 # convert_sep28k_to_wenet.py
@@ -7,6 +7,7 @@
 
 import csv
 from pathlib import Path
+import torchaudio  # for checking audio validity
 
 # ann_csv = sys.argv[1]
 # wav_dir = Path(sys.argv[2])
@@ -26,12 +27,22 @@ sep_label_csv = base.parent.parent / 'raw_data' / 'SEP-28k' / 'SEP-28k_labels.cs
 clip_path = base.parent.parent / 'raw_data' / 'SEP-28k' / 'clips' / 'stuttering-clips' / 'clips'
 
 # Creating the output paths
-out = base.parent / 'data' / 'train_set'  # base.parent is the interspeech2024-code folder
+out = base.parent / 'data' / 'train'  # base.parent is the interspeech2024-code folder
 out.mkdir(parents=True, exist_ok=True)  # create the directory if not exist
 
 wav_scp = out / "wav.scp"
 segments = out / "segments"
 text = out / "text"
+
+# Helper function to detect empty audio files and not include them in the Kaldi files
+def is_audio_valid(wav_path):
+    '''Check if the audio file at wav_path is valid (non-empty).'''
+    try:
+        waveform, sr = torchaudio.load(wav_path)
+        return waveform.numel() > 0
+    except Exception as e:
+        print(f"❌ Error loading audio file: {wav_path}\n{e}")
+        return False
 
 
 # Writes all the correct info for the dataset into the relevant files;
@@ -52,15 +63,20 @@ def convert_dataset(label_csv):
         for row in label_reader:
 
             # Get show name, EpId, ClipId
-            show = row.get('Show')
-            ep_ID = row.get('EpId')
-            clip_ID = row.get('ClipId')
+            show = row.get('Show').strip()
+            ep_ID = row.get('EpId').strip()
+            clip_ID = row.get('ClipId').strip()
 
             # e.g. FluencyBank_010_0
             file_ID = f"{show}_{ep_ID}_{clip_ID}"
 
+            # Check if audio is valid
+            wav_dir = Path(f"{clip_path}/{file_ID}.wav")  # Formula for audio file path: Show_EpId_ClipId.wav
+            if not is_audio_valid(wav_dir):
+                print(f"⚠️ Skipping invalid audio file: {wav_dir}")
+                continue  # skip this file if audio is invalid
+
             # Write fwav: rec_file_ID wav_dir
-            wav_dir = f"{clip_path}/{file_ID}.wav"  # Formula for audio file path: Show_EpId_ClipId.wav
             fwav.write(f"rec_{file_ID} {wav_dir}\n")
 
             # Write segments: utt_file_ID rec_file_ID 0 stop/16000-start/16000

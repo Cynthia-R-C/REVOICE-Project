@@ -13,6 +13,11 @@ cmvn_conf:
   is_json_cmvn: true
 
 dataset_conf:
+    fbank_conf:
+        num_mel_bins: 80
+        frame_shift: 10
+        frame_length: 25
+        dither: 0.0
     filter_conf:
         max_length: 4096
         min_length: 10
