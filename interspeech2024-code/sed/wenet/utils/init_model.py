@@ -14,37 +14,106 @@
 
 import torch
 
-from wenet.k2.model import K2Model
-from wenet.transducer.joint import TransducerJoint
-from wenet.transducer.predictor import (ConvPredictor, EmbeddingPredictor,
-                                        RNNPredictor)
-from wenet.transducer.transducer import Transducer
-from wenet.transformer.asr_model import ASRModel
-from wenet.transformer.sed_model import SEDModel
-from wenet.transformer.cmvn import GlobalCMVN
-from wenet.transformer.ctc import CTC
-from wenet.transformer.decoder import BiTransformerDecoder, TransformerDecoder
-from wenet.transformer.encoder import ConformerEncoder, TransformerEncoder
-from wenet.branchformer.encoder import BranchformerEncoder
-from wenet.e_branchformer.encoder import EBranchformerEncoder
-from wenet.squeezeformer.encoder import SqueezeformerEncoder
-from wenet.efficient_conformer.encoder import EfficientConformerEncoder
-from wenet.paraformer.paraformer import Paraformer
-from wenet.cif.predictor import Predictor
-from wenet.utils.cmvn import load_cmvn
-from wenet.stutter.convlstm import ConvLSTM
-from wenet.stutter.stutternet import StutterNet
-from wenet.transformer.wav2vec2_encoder import S3prlFrontend
+# --- New safe import patch for init_model.py (Windows + Pylance friendly) ---
+from typing import Any, cast
+
+print("[Info] Applying safe import patch for init_model.py")
+
+# Pre-declare all optional symbols so Pylance knows they exist
+TransducerJoint: Any = None
+ConvPredictor: Any = None
+EmbeddingPredictor: Any = None
+RNNPredictor: Any = None
+Transducer: Any = None
+K2Model: Any = None
+
+ASRModel: Any = None
+SEDModel: Any = None
+GlobalCMVN: Any = None
+CTC: Any = None
+BiTransformerDecoder: Any = None
+TransformerDecoder: Any = None
+ConformerEncoder: Any = None
+TransformerEncoder: Any = None
+S3prlFrontend: Any = None
+
+BranchformerEncoder: Any = None
+EBranchformerEncoder: Any = None
+SqueezeformerEncoder: Any = None
+EfficientConformerEncoder: Any = None
+
+Paraformer: Any = None
+Predictor: Any = None
+
+load_cmvn: Any = None  # from wenet.utils.cmvn
+ConvLSTM: Any = None   # from wenet.stutter.convlstm
+StutterNet: Any = None # from wenet.stutter.stutternet
+
+def try_import(module_path: str, names: list[str]) -> None:
+    """Try importing selected symbols from a module, else keep them as None."""
+    try:
+        module = __import__(module_path, fromlist=names)
+        for name in names:
+            globals()[name] = getattr(module, name)
+    except Exception as e:
+        print(f"[Warning] Skipped optional module {module_path} ({e})")
+
+# Optional ASR/transducer
+try_import("wenet.transducer.joint", ["TransducerJoint"])
+try_import("wenet.transducer.predictor", ["ConvPredictor", "EmbeddingPredictor", "RNNPredictor"])
+try_import("wenet.transducer.transducer", ["Transducer"])
+try_import("wenet.k2.model", ["K2Model"])
+
+# Transformer / SED / CMVN / CTC
+try_import("wenet.transformer.asr_model", ["ASRModel"])
+try_import("wenet.transformer.sed_model", ["SEDModel"])
+try_import("wenet.transformer.cmn", ["GlobalCMVN"])
+try_import("wenet.transformer.ctc", ["CTC"])
+try_import("wenet.transformer.decoder", ["BiTransformerDecoder", "TransformerDecoder"])
+try_import("wenet.transformer.encoder", ["ConformerEncoder", "TransformerEncoder"])
+try_import("wenet.transformer.wav2vec2_encoder", ["S3prlFrontend"])
+
+# Encoders (optional)
+try_import("wenet.branchformer.encoder", ["BranchformerEncoder"])
+try_import("wenet.e_branchformer.encoder", ["EBranchformerEncoder"])
+try_import("wenet.squeezeformer.encoder", ["SqueezeformerEncoder"])
+try_import("wenet.efficient_conformer.encoder", ["EfficientConformerEncoder"])
+
+# Other optional architectures
+try_import("wenet.paraformer.paraformer", ["Paraformer"])
+try_import("wenet.cif.predictor", ["Predictor"])
+
+# Utilities + StutterNet (these are the ones you actually use)
+try_import("wenet.utils.cmvn", ["load_cmvn"])
+try_import("wenet.stutter.convlstm", ["ConvLSTM"])
+try_import("wenet.stutter.stutternet", ["StutterNet"])
+
+print("[Info] init_model.py import patch completed.")
+
+
 
 
 def init_model(configs):
-    if configs['cmvn_file'] is not None:
-        mean, istd = load_cmvn(configs['cmvn_file'], configs['is_json_cmvn'])
-        global_cmvn = GlobalCMVN(
-            torch.from_numpy(mean).float(),
-            torch.from_numpy(istd).float())
-    else:
-        global_cmvn = None
+    # if configs['cmvn_file'] is not None:
+    #     mean, istd = load_cmvn(configs['cmvn_file'], configs['is_json_cmvn'])
+    #     global_cmvn = GlobalCMVN(
+    #         torch.from_numpy(mean).float(),
+    #         torch.from_numpy(istd).float())
+    # else:
+    #     global_cmvn = None
+
+    cmvn_file = configs.get('cmvn_file', None)
+    if cmvn_file is None and 'cmvn' in configs:
+        # Fallback to explicit CLI argument
+        cmvn_file = configs['cmvn']
+
+        if cmvn_file is not None:
+            print(f"[Info] Using CMVN file: {cmvn_file}")
+            cmvn = load_cmvn(cmvn_file)
+        else:
+            print("[Warning] No CMVN file found in configs; proceeding without CMVN.")
+            cmvn = None
+
 
     input_dim = configs['input_dim']
     vocab_size = configs['output_dim']

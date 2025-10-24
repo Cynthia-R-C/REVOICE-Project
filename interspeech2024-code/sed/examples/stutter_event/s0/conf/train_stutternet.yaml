@@ -13,7 +13,7 @@ cmvn_conf:
   is_json_cmvn: true
 
 dataset_conf:
-    fbank_conf:
+    fbank_conf:   # added for cm calculations
         num_mel_bins: 80
         frame_shift: 10
         frame_length: 25
