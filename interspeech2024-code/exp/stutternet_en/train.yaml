@@ -3,7 +3,7 @@ cmvn: global_cmvn
 cmvn_conf:
   cmvn_file: data/train/global_cmvn
   is_json_cmvn: true
-cmvn_file: interspeech2024-code\data\train\global_cmvn
+cmvn_file: data\train\global_cmvn
 dataset_conf:
   batch_conf:
     batch_type: dynamic
