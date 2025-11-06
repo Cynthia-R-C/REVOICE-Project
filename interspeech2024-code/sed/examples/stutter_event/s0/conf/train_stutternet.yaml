@@ -12,6 +12,8 @@ cmvn_conf:
   cmvn_file: 'data/train/global_cmvn'
   is_json_cmvn: true
 
+cmvn_file: data/train/global_cmvn
+
 dataset_conf:
     fbank_conf:
         num_mel_bins: 80
