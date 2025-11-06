@@ -77,13 +77,13 @@ def convert_dataset(label_csv):
                 continue  # skip this file if audio is invalid
 
             # Write fwav: rec_file_ID wav_dir
-            fwav.write(f"rec_{file_ID} {wav_dir}\n")
+            fwav.write(f"{file_ID} {wav_dir}\n")
 
             # Write segments: utt_file_ID rec_file_ID 0 stop/16000-start/16000
             start = int(row.get('Start'))
             stop = int(row.get('Stop'))
             duration = (stop - start) / 16000.0  # assuming 16kHz sampling rate
-            fseg.write(f"utt_{file_ID} rec_{file_ID} 0.00 {duration:.2f}\n")
+            fseg.write(f"{file_ID} {file_ID} 0.00 {duration:.2f}\n")
 
             # Write text: utt_file_ID is_dys is_prolong is_block is_soundrep is_wordrep is_interj
             prolong_score = int(row.get('Prolongation'))
@@ -99,7 +99,7 @@ def convert_dataset(label_csv):
 
             is_dys = 1 if (is_prolong or is_block or is_soundrep or is_wordrep or is_interj) else 0
 
-            ftxt.write(f"utt_{file_ID} {is_dys} {is_prolong} {is_block} {is_soundrep} {is_wordrep} {is_interj}\n")
+            ftxt.write(f"{file_ID} {is_dys} {is_prolong} {is_block} {is_soundrep} {is_wordrep} {is_interj}\n")
 
 # Convert FluencyBank dataset
 convert_dataset(fl_label_csv)
