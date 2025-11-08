@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
+# Personal debugging flag
+DEBUG = True
+
 import random
 
 import torch
@@ -131,16 +135,29 @@ def Dataset(data_type,
             bpe_model(str): model for english bpe part
             partition(bool): whether to do data partition in terms of rank
     """
+    if DEBUG:
+        print("\n\n\n\n\n\n\n\n\n\n[Personal debug] Entering Dataset function in dataset_sed.py\n\n\n\n\n\n\n\n\n\n")
+
     assert data_type in ['raw', 'shard']
+    if DEBUG:
+        print(f"\n\n\n\n\n\n\n\n\n\n[Personal debug] Asserted datatype; data_type: {data_type}\n\n\n\n\n\n\n\n\n\n")
     lists = read_lists(data_list_file)
     shuffle = conf.get('shuffle', True)
+    if DEBUG:
+        print(f"\n\n\n\n\n\n\n\n\n\n[Personal debug] Getting dataset using DataList shuffle and partitioning\n\n\n\n\n\n\n\n\n\n")
     dataset = DataList(lists, shuffle=shuffle, partition=partition)
     if data_type == 'shard':
+        if DEBUG:
+            print(f"\n\n\n\n\n\n\n\n\n\n[Personal debug] Data type is shard; applying url_opener and tar_file_and_group processors\n\n\n\n\n\n\n\n\n\n")
         dataset = Processor(dataset, processor.url_opener)
         dataset = Processor(dataset, processor.tar_file_and_group)
     else:
+        if DEBUG:
+            print(f"\n\n[Personal debug] Data type is raw; applying raw_file processor\n\n")
         dataset = Processor(dataset, processor.parse_raw)
 
+    if DEBUG:
+        print(f"\n\n[Personal debug] Applying SED specific processors\n\n")
     dataset = Processor(dataset, processor_sed.sed_label)
     filter_conf = conf.get('filter_conf', {})
     dataset = Processor(dataset, processor.filter, **filter_conf)

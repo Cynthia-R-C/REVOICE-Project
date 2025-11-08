@@ -151,7 +151,7 @@ def resample(data, resample_rate=16000):
             sample['sample_rate'] = resample_rate
         yield sample
 
-# no SOX)
+# no SOX
 def speed_perturb(data, speeds=None):
     if speeds is None:
         speeds = [0.9, 1.0, 1.1]
