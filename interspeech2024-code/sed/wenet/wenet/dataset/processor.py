@@ -58,7 +58,8 @@ def url_opener(data):
 def tar_file_and_group(data):
     for sample in data:
         assert 'stream' in sample
-        stream = tarfile.open(fileobj=sample['stream'], mode="r|*")
+        # Use "r:*" (random access) instead of "r|*"
+        stream = tarfile.open(fileobj=sample['stream'], mode="r:*")
         prev_prefix = None
         example = {}
         valid = True
