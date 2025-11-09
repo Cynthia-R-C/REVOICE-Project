@@ -85,7 +85,7 @@ def convert_dataset(label_csv):
             duration = (stop - start) / 16000.0  # assuming 16kHz sampling rate
             fseg.write(f"{file_ID} {file_ID} 0.00 {duration:.2f}\n")
 
-            # Write text: utt_file_ID is_dys is_prolong is_block is_soundrep is_wordrep is_interj
+            # Write text: utt_file_ID is_dys,is_prolong,is_block,is_soundrep,is_wordrep,is_interj
             prolong_score = int(row.get('Prolongation'))
             is_prolong = 1 if prolong_score > 1 else 0
             block_score = int(row.get('Block'))
@@ -99,7 +99,7 @@ def convert_dataset(label_csv):
 
             is_dys = 1 if (is_prolong or is_block or is_soundrep or is_wordrep or is_interj) else 0
 
-            ftxt.write(f"{file_ID} {is_dys} {is_prolong} {is_block} {is_soundrep} {is_wordrep} {is_interj}\n")
+            ftxt.write(f"{file_ID} {is_dys},{is_prolong},{is_block},{is_soundrep},{is_wordrep},{is_interj}\n")
 
 # Convert FluencyBank dataset
 convert_dataset(fl_label_csv)
