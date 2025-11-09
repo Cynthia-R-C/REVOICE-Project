@@ -14,7 +14,7 @@
 
 
 # Personal debugging flag
-DEBUG = True
+DEBUG = False
 
 import logging
 from contextlib import nullcontext

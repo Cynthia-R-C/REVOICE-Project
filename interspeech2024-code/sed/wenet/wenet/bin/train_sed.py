@@ -27,7 +27,7 @@ import torch.optim as optim
 import yaml
 
 # Personal debug mode
-DEBUG = True
+DEBUG = False
 
 # patched deepseed
 _DS_AVAILABLE = False
