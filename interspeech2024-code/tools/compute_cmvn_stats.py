@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # encoding: utf-8
+# Modified for mfcc instead of fbank
 
 import sys
 import argparse
@@ -17,10 +18,12 @@ class CollateFunc(object):
     ''' Collate function for AudioDataset
     '''
 
-    def __init__(self, feat_dim, resample_rate):
+    def __init__(self, feat_dim, resample_rate, feats_type, fbank_conf=None, mfcc_conf=None):
         self.feat_dim = feat_dim
         self.resample_rate = resample_rate
-        pass
+        self.feats_type = feats_type
+        self.fbank_conf = fbank_conf or {}
+        self.mfcc_conf = mfcc_conf or {}
 
     def __call__(self, batch):
         mean_stat = torch.zeros(self.feat_dim)
@@ -32,8 +35,6 @@ class CollateFunc(object):
             wav_path = value[0]
             sample_rate = torchaudio.info(wav_path).sample_rate
             resample_rate = sample_rate
-            # len(value) == 3 means segmented wav.scp,
-            # len(value) == 1 means original wav.scp
             if len(value) == 3:
                 start_frame = int(float(value[1]) * sample_rate)
                 end_frame = int(float(value[2]) * sample_rate)
@@ -50,11 +51,29 @@ class CollateFunc(object):
                 waveform = torchaudio.transforms.Resample(
                     orig_freq=sample_rate, new_freq=resample_rate)(waveform)
 
-            mat = kaldi.fbank(waveform,
-                              num_mel_bins=self.feat_dim,
-                              dither=0.0,
-                              energy_floor=0.0,
-                              sample_frequency=resample_rate)
+            # change: select feature type
+            if self.feats_type == 'mfcc':
+                mat = kaldi.mfcc(
+                    waveform,
+                    num_mel_bins=self.mfcc_conf.get('num_mel_bins', 40),
+                    num_ceps=self.mfcc_conf.get('num_ceps', 40),
+                    frame_length=self.mfcc_conf.get('frame_length', 25),
+                    frame_shift=self.mfcc_conf.get('frame_shift', 10),
+                    low_freq=self.mfcc_conf.get('low_freq', 20),
+                    high_freq=self.mfcc_conf.get('high_freq', -400),
+                    dither=self.mfcc_conf.get('dither', 0.1),
+                    sample_frequency=resample_rate
+                )
+            else:
+                mat = kaldi.fbank(
+                    waveform,
+                    num_mel_bins=self.fbank_conf.get('num_mel_bins', 80),
+                    dither=self.fbank_conf.get('dither', 0.0),
+                    energy_floor=0.0,
+                    sample_frequency=resample_rate
+                )
+            # end change
+
             mean_stat += torch.sum(mat, axis=0)
             var_stat += torch.sum(torch.square(mat), axis=0)
             number += mat.shape[0]
@@ -62,7 +81,6 @@ class CollateFunc(object):
 
 
 class AudioDataset(Dataset):
-
     def __init__(self, data_file):
         self.items = []
         with codecs.open(data_file, 'r', encoding='utf-8') as f:
@@ -79,38 +97,37 @@ class AudioDataset(Dataset):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='extract CMVN stats')
-    parser.add_argument('--num_workers',
-                        default=0,
-                        type=int,
-                        help='num of subprocess workers for processing')
-    parser.add_argument('--train_config',
-                        default='',
-                        help='training yaml conf')
-    parser.add_argument('--in_scp', default=None, help='wav scp file')
-    parser.add_argument('--out_cmvn',
-                        default='global_cmvn',
-                        help='global cmvn file')
-
-    doc = "Print log after every log_interval audios are processed."
-    parser.add_argument("--log_interval", type=int, default=1000, help=doc)
+    parser.add_argument('--num_workers', default=0, type=int)
+    parser.add_argument('--train_config', default='', help='training yaml conf')
+    parser.add_argument('--in_scp', default=None, help='wav.scp file')
+    parser.add_argument('--out_cmvn', default='global_cmvn', help='output file')
+    parser.add_argument('--log_interval', type=int, default=1000)
     args = parser.parse_args()
 
     with open(args.train_config, 'r') as fin:
         configs = yaml.load(fin, Loader=yaml.FullLoader)
-    feat_dim = configs['dataset_conf']['fbank_conf']['num_mel_bins']
-    resample_rate = 0
-    if 'resample_conf' in configs['dataset_conf']:
-        resample_rate = configs['dataset_conf']['resample_conf'][
-            'resample_rate']
-        print('using resample and new sample rate is {}'.format(resample_rate))
 
-    collate_func = CollateFunc(feat_dim, resample_rate)
+    dataset_conf = configs['dataset_conf']
+    feats_type = dataset_conf.get('feats_type', 'fbank')
+    fbank_conf = dataset_conf.get('fbank_conf', {})
+    mfcc_conf = dataset_conf.get('mfcc_conf', {})
+
+    if feats_type == 'mfcc':
+        feat_dim = mfcc_conf.get('num_ceps', 40)
+    else:
+        feat_dim = fbank_conf.get('num_mel_bins', 80)
+
+    resample_rate = 0
+    if 'resample_conf' in dataset_conf:
+        resample_rate = dataset_conf['resample_conf'].get('resample_rate', 0)
+        print(f'using resample, new rate = {resample_rate}')
+
+    collate_func = CollateFunc(feat_dim, resample_rate, feats_type, fbank_conf, mfcc_conf)
     dataset = AudioDataset(args.in_scp)
-    batch_size = 20
+
     data_loader = DataLoader(dataset,
-                             batch_size=batch_size,
+                             batch_size=20,
                              shuffle=True,
-                             sampler=None,
                              num_workers=args.num_workers,
                              collate_fn=collate_func)
 
@@ -124,12 +141,10 @@ if __name__ == '__main__':
             all_mean_stat += mean_stat
             all_var_stat += var_stat
             all_number += number
-            wav_number += batch_size
-
+            wav_number += 20
             if wav_number % args.log_interval == 0:
                 print(f'processed {wav_number} wavs, {all_number} frames',
-                      file=sys.stderr,
-                      flush=True)
+                      file=sys.stderr, flush=True)
 
     cmvn_info = {
         'mean_stat': list(all_mean_stat.tolist()),
