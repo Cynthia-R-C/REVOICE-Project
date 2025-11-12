@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Modified for StutterNet inference - Cynthia Chen 11/10/2025
+
 from __future__ import print_function
 
 import argparse
@@ -42,6 +44,7 @@ def get_args():
                         default=-1,
                         help='gpu id for this rank, -1 for cpu')
     parser.add_argument('--checkpoint', required=True, help='checkpoint model')
+    parser.add_argument('--cmvn', required=True, help='path to CMVN file')  # added
     parser.add_argument('--penalty',
                         type=float,
                         default=0.0,
@@ -121,7 +124,17 @@ def main():
 
     test_data_loader = DataLoader(test_dataset, batch_size=None, num_workers=0)
 
+    # Determine input dimension from feature type
+    if 'mfcc_conf' in configs['dataset_conf']:
+        configs['input_dim'] = configs['dataset_conf']['mfcc_conf'].get('num_ceps', 40)
+    elif 'fbank_conf' in configs['dataset_conf']:
+        configs['input_dim'] = configs['dataset_conf']['fbank_conf'].get('num_mel_bins', 80)
+    else:
+        configs['input_dim'] = 80  # safe default
+
     # Init asr model from configs
+    configs['cmvn_file'] = args.cmvn  # add hardcode
+    configs['is_json_cmvn'] = True  # add hardcode
     model = init_model(configs)
 
     load_checkpoint(model, args.checkpoint)
@@ -135,7 +148,7 @@ def main():
     # TODO(Dinghao Zhou): Support RNN-T related decoding
     # TODO(Lv Xiang): Support k2 related decoding
     # TODO(Kaixun Huang): Support context graph
-    f = open(os.path.join(args.result_dir, 'results.txt'), 'w')
+    f = open(os.path.join(args.result_dir, 'infer_sed_results.txt'), 'w')
     with torch.no_grad():
         hit_all = torch.Tensor([0, 0, 0, 0, 0]).to(device)
         hyp_all = torch.Tensor([0, 0, 0, 0, 0]).to(device)
