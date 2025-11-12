@@ -18,6 +18,9 @@ from wenet.utils.init_model import init_model
 from wenet.utils.checkpoint import load_checkpoint
 from wenet.utils.config import override_config
 
+# Debug flag
+DEBUG = True
+
 def get_args():
     p = argparse.ArgumentParser()
     p.add_argument('--config', required=True, help='training config yaml')
@@ -130,6 +133,10 @@ def main():
     # Produces new lists so that shape is (num_samples, num_classes) and there aren't different sublists for each different batch
     all_probs = np.concatenate(all_probs, axis=0)
     all_labels = np.concatenate(all_labels, axis=0)
+
+    # Debugging
+    if DEBUG:
+        print("Min prob:", np.min(all_probs), "Max prob:", np.max(all_probs))
 
     # Per-class F1-optimal thresholds via PR curve
     num_classes = all_probs.shape[1]

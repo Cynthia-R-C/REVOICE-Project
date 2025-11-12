@@ -45,6 +45,7 @@ def get_args():
                         help='gpu id for this rank, -1 for cpu')
     parser.add_argument('--checkpoint', required=True, help='checkpoint model')
     parser.add_argument('--cmvn', required=True, help='path to CMVN file')  # added
+    parser.add_argument('--threshold', required=True, help='path to threshold file')  # added
     parser.add_argument('--penalty',
                         type=float,
                         default=0.0,
@@ -142,7 +143,8 @@ def main():
     device = torch.device('cuda' if use_cuda else 'cpu')
     model = model.to(device)
     model.eval()
-    threshold = torch.Tensor([[0.42, 0.35, 0.37, 0.37, 0.4]]).to(device)
+    # threshold = torch.Tensor([[0.42, 0.35, 0.37, 0.37, 0.4]]).to(device)  # old thresholds
+    threshold = torch.load(args.threshold).to(device)  # load computed thresholds
     print(f'threshold {threshold}')
 
     # TODO(Dinghao Zhou): Support RNN-T related decoding
