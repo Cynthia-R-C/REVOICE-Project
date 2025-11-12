@@ -115,7 +115,7 @@ def main():
 
     # Run inference
     with torch.no_grad():
-        for batch in tqdm(dev_loader, desc="Dev inference"):
+        for batch in tqdm(dev_loader, desc="Inference"):
             # Dataset returns: keys, feats, target, feats_lengths, target_lengths
             # Following code is basically taken from infer_sed.py and lightly modified
             _, feats, target, feats_lengths, _ = batch
