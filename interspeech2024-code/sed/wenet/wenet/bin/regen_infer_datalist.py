@@ -6,9 +6,9 @@
 import os
 from pathlib import Path
 
-datalist_path = 'C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\interspeech2024-code\\data\\dev\\data.list'  # use absolute path because tired...
+datalist_path = 'C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\interspeech2024-code\\data\\train\\data.list'  # use absolute path because tired...
 
-new_base_dir = 'C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\interspeech2024-code\\data\\dev\\infer_data.list'  # new base dir for wav files
+new_base_dir = 'C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\interspeech2024-code\\data\\train\\infer_data.list'  # new base dir for wav files
 
 with open(datalist_path, 'r', encoding='utf8') as orig_f:
     with open(new_base_dir, 'w', encoding='utf8') as new_f:

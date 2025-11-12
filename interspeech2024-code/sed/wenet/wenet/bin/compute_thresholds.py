@@ -26,7 +26,7 @@ def get_args():
     p.add_argument('--config', required=True, help='training config yaml')
     p.add_argument('--checkpoint', required=True, help='model checkpoint .pt')
     p.add_argument('--cmvn', required=True, help='path to CMVN file (json or kaldi)')
-    p.add_argument('--dev_data', required=True, help='dev shard list (e.g., data/dev/data.list)')
+    p.add_argument('--dataset', required=True, help='data file (data.list)')
     p.add_argument('--data_type', default='shard', choices=['shard', 'raw'])
     p.add_argument('--batch_size', type=int, default=16)
     p.add_argument('--gpu', type=int, default=-1)
@@ -87,7 +87,7 @@ def main():
     test_conf['batch_conf']['batch_size'] = args.batch_size
 
     # Dataset / Loader over shard list
-    dev_dataset = Dataset(args.data_type, args.dev_data, test_conf, partition=False)
+    dev_dataset = Dataset(args.data_type, args.dataset, test_conf, partition=False)
     dev_loader = DataLoader(dev_dataset, batch_size=None, num_workers=0)
 
     # Infer input_dim the same way as infer_sed.py

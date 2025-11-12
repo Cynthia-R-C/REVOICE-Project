@@ -34,7 +34,7 @@ from wenet.utils.init_model import init_model
 def get_args():
     parser = argparse.ArgumentParser(description='recognize with your model')
     parser.add_argument('--config', required=True, help='config file')
-    parser.add_argument('--test_data', required=True, help='test data file')
+    parser.add_argument('--dataset', required=True, help='test data file')
     parser.add_argument('--data_type',
                         default='raw',
                         choices=['raw', 'shard'],
@@ -119,7 +119,7 @@ def main():
     test_conf['batch_conf']['batch_size'] = args.batch_size
 
     test_dataset = Dataset(args.data_type,
-                           args.test_data,
+                           args.dataset,
                            test_conf,
                            partition=False)
 
