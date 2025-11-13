@@ -5,7 +5,7 @@ from torch import Tensor
 import torch.nn.functional as F
 
 class StutterNet(nn.Module):
-  def __init__(self, vocab_size, n_mels=40, 
+  def __init__(self, vocab_size, n_mels=80,   # modified for fbank training
                dropout=0.0, use_batchnorm=False, scale=1):
     '''Implementation of StutterNet
     from Sheikh et al. StutterNet: 

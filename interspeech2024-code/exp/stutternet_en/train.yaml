@@ -13,7 +13,7 @@ dataset_conf:
     frame_length: 25
     frame_shift: 10
     num_mel_bins: 80
-  feats_type: mfcc
+  feats_type: fbank
   filter_conf:
     max_length: 4096
     min_length: 10
@@ -26,7 +26,6 @@ dataset_conf:
     high_freq: -400
     low_freq: 20
     num_ceps: 40
-    num_mel_bins: 40
   resample_conf:
     resample_rate: 16000
   shuffle: true

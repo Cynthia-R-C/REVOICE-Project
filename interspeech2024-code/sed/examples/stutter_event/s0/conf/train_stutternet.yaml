@@ -28,9 +28,8 @@ dataset_conf:
     resample_conf:
         resample_rate: 16000
     speed_perturb: false
-    feats_type: mfcc
+    feats_type: fbank   # they said mfcc, but interspeech's entire pipeline basically hardcodes fbank?? so I'll just change this
     mfcc_conf:
-        num_mel_bins: 40
         frame_shift: 10
         frame_length: 25
         num_ceps: 40
