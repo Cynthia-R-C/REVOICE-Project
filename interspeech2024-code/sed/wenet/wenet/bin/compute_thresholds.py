@@ -124,7 +124,7 @@ def main():
             target = target.to(device).int()
 
             logits = model.decode(feats, feats_lengths)
-            probs = torch.sigmoid(logits).cpu().numpy()
+            probs = logits.cpu().numpy()
             labels = target.cpu().numpy()
 
             all_probs.append(probs)  # shape (batch_size, num_classes)
