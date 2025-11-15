@@ -17,6 +17,8 @@ from torch.utils.data import DataLoader
 from wenet.utils.init_model import init_model
 from wenet.utils.checkpoint import load_checkpoint
 from wenet.utils.config import override_config
+from wenet.utils.cmvn import load_cmvn
+from wenet.transformer.cmvn import GlobalCMVN
 
 # Debug flag
 DEBUG = True
@@ -110,6 +112,12 @@ def main():
     model = model.to(device)
     model.eval()
 
+    if configs.get('cmvn_file') is not None:
+        mean_np, istd_np = load_cmvn(configs['cmvn_file'], configs.get('is_json_cmvn', True))
+        # Move to device for fast in-loop application
+        mean = torch.from_numpy(mean_np).float().to(device)
+        istd = torch.from_numpy(istd_np).float().to(device)
+
     all_probs = []
     all_labels = []
 
@@ -123,6 +131,19 @@ def main():
             feats_lengths = feats_lengths.to(device)
             target = target.to(device).int()
 
+            # NOTE: Do NOT apply external CMVN here by default. The StutterNet model
+            # used in this repo may have been trained on raw features (or already
+            # incorporates normalization). Applying CMVN blindly changed score
+            # distributions and harmed downstream PR/F1 metrics. We therefore avoid
+            # modifying features here; if you know you must apply CMVN, do it
+            # explicitly or enable it with a flag.
+
+            # We intentionally do NOT change `feats` here. Preprocessing must
+            # match how the model was trained. If you trained with an external
+            # CMVN, ensure the dev/test data were normalized prior to saving
+            # or compute thresholds. Automatic in-loop normalization caused
+            # incorrect results for this repo's models.
+            
             logits = model.decode(feats, feats_lengths)
             probs = logits.cpu().numpy()
             labels = target.cpu().numpy()
