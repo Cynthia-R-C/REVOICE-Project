@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 class StutterNet(nn.Module):
   def __init__(self, vocab_size, n_mels=80,   # modified for fbank training
-               dropout=0.0, use_batchnorm=False, scale=1):
+               dropout=0.0, use_batchnorm=True, scale=1):
     '''Implementation of StutterNet
     from Sheikh et al. StutterNet: 
     "Stuttering Detection Using 
@@ -150,7 +150,7 @@ class StutterNet(nn.Module):
 
 class ResBlock1d(nn.Module):
   def __init__(self, input_dims, output_dims, depth=2, kernel_size=3,
-               use_batchnorm=False, downsample=False, dropout=0.0):
+               use_batchnorm=True, downsample=False, dropout=0.0):
     super(ResBlock1d, self).__init__()
 
     self.depth = depth
@@ -209,7 +209,7 @@ class ResBlock1d(nn.Module):
 
 class ResNet1D(nn.Module):
   def __init__(self, n_mels=100,n_classes=12, kernel_size=3,
-               dropout=0.0, use_batchnorm=False, scale=1):
+               dropout=0.0, use_batchnorm=True, scale=1):
     '''Implementation of StutterNet
     from Sheikh et al. StutterNet: 
     "Stuttering Detection Using 
