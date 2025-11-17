@@ -211,7 +211,7 @@ def main():
     except Exception as ex:
         print('Failed to save diagnostics:', ex)
 
-    # Per-class F1-optimal thresholds via PR curve
+    # Per-class precision-optimal thresholds via PR curve
     num_classes = all_probs.shape[1]
     thresholds = []
     for c in range(num_classes):  # for each stutter type
@@ -223,8 +223,8 @@ def main():
             # degenerate case: pick 0.5
             thresholds.append(0.5)
             continue
-        f1 = 2 * prec[1:] * rec[1:] / (prec[1:] + rec[1:] + 1e-9)  # manually compute f1s, since scikit's f1 computer requires a threshold argument; this gives an array of f1s
-        best_idx = np.argmax(f1)
+        # f1 = 2 * prec[1:] * rec[1:] / (prec[1:] + rec[1:] + 1e-9)  # manually compute f1s, since scikit's f1 computer requires a threshold argument; this gives an array of f1s
+        best_idx = np.argmax(prec)  # get index of max precision - modified for attempt 8
         thresholds.append(float(thr[best_idx]))  # get best threshold
 
     thresholds = torch.tensor(thresholds, dtype=torch.float32)
