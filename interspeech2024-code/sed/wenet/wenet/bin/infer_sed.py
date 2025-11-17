@@ -73,6 +73,14 @@ def calc_hit_hyp_ref(results, target):
 def calc_rec_prec_f1(hit, hyp, ref):
     def to_string(t, do_round=True):
         return '\t'.join([str(round(r * 100, 2)) if do_round else str(r) for r in t.tolist()])
+    # Note to self
+    # Rec: recall
+    # Prec: precision
+    # F1: f1 score
+    # hit: true positives
+    # hyp: predicted positives
+    # ref: actual positives
+
     rec = hit / ref
     prec = hit / hyp
     f1 = 2 * rec * prec / (rec + prec)

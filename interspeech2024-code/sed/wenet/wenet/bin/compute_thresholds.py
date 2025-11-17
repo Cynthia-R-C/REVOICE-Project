@@ -11,6 +11,8 @@ import matplotlib.pyplot as plt
 import math
 from tqdm import tqdm
 from sklearn.metrics import precision_recall_curve
+from sklearn.metrics import average_precision_score
+import json
 
 from wenet.dataset.dataset_sed import Dataset
 from torch.utils.data import DataLoader
@@ -112,16 +114,23 @@ def main():
 
     all_probs = []
     all_labels = []
+    all_keys = []
 
     # Run inference
     with torch.no_grad():
         for batch in tqdm(dev_loader, desc="Inference"):
             # Dataset returns: keys, feats, target, feats_lengths, target_lengths
             # Following code is basically taken from infer_sed.py and lightly modified
-            _, feats, target, feats_lengths, _ = batch
+            keys, feats, target, feats_lengths, _ = batch
             feats = feats.to(device).float()
             feats_lengths = feats_lengths.to(device)
             target = target.to(device).int()
+
+            # collect keys for later inspection (keys is a list of strings)
+            try:
+                all_keys.extend(keys)
+            except Exception:
+                pass
 
             logits = model.decode(feats, feats_lengths)
             probs = logits.cpu().numpy()
@@ -137,6 +146,70 @@ def main():
     # Debugging
     if DEBUG:
         print("Min prob:", np.min(all_probs), "Max prob:", np.max(all_probs))
+
+    # Diagnostics: shapes, per-class counts, AUPRC, and pos/neg score stats
+    diagnostics = {}
+    diagnostics['all_probs_shape'] = list(all_probs.shape)
+    diagnostics['all_labels_shape'] = list(all_labels.shape)
+    diagnostics['num_samples'] = int(all_probs.shape[0])
+
+    if all_probs.shape[0] != all_labels.shape[0]:
+        diagnostics['alignment_error'] = True
+        diagnostics['alignment_message'] = 'Number of probability rows and label rows differ'
+        print('ERROR: probs/labels row mismatch:', diagnostics['all_probs_shape'], diagnostics['all_labels_shape'])
+    else:
+        diagnostics['alignment_error'] = False
+
+    num_classes = all_probs.shape[1]
+    diagnostics['per_class'] = {}
+    for c in range(num_classes):
+        y_true = all_labels[:, c].astype(np.int32)
+        y_score = all_probs[:, c]
+
+        pos_count = int(np.sum(y_true == 1))
+        neg_count = int(np.sum(y_true == 0))
+        missing_count = int(np.sum(y_true == -1)) if np.any(y_true == -1) else 0
+
+        try:
+            ap = float(average_precision_score(y_true == 1, y_score))
+        except Exception:
+            ap = None
+
+        pos_scores = y_score[y_true == 1]
+        neg_scores = y_score[y_true == 0]
+
+        def stats(arr):
+            if arr.size == 0:
+                return None
+            return {
+                'count': int(arr.size),
+                'min': float(np.min(arr)),
+                'p25': float(np.percentile(arr, 25)),
+                'median': float(np.median(arr)),
+                'p75': float(np.percentile(arr, 75)),
+                'max': float(np.max(arr)),
+                'mean': float(np.mean(arr)),
+                'std': float(np.std(arr)),
+            }
+
+        diagnostics['per_class'][str(c)] = {
+            'pos_count': pos_count,
+            'neg_count': neg_count,
+            'auprc_baseline': pos_count / (pos_count + neg_count) if (pos_count + neg_count) > 0 else None,
+            'missing_count': missing_count,
+            'auprc': ap,
+            'pos_scores': stats(pos_scores),
+            'neg_scores': stats(neg_scores),
+        }
+
+    try:
+        diag_path = os.path.splitext(args.output)[0] + '_diagnostics.json'
+        with open(diag_path, 'w') as df:
+            json.dump(diagnostics, df, indent=2)
+        if DEBUG:
+            print(f'Diagnostics saved to {diag_path}')
+    except Exception as ex:
+        print('Failed to save diagnostics:', ex)
 
     # Per-class F1-optimal thresholds via PR curve
     num_classes = all_probs.shape[1]

@@ -23,6 +23,7 @@ def get_args():
     parser.add_argument('--config', required=True, help='config file (e.g. train_stutternet.yaml)')
     parser.add_argument('--checkpoint', required=True, help='checkpoint model (.pt)')
     parser.add_argument('--cmvn', required=True, help='path to CMVN file')
+    parser.add_argument('--threshold', required=True, help='path to threshold file')  # added
     parser.add_argument('--wav', required=True, help='input wav file path')
     parser.add_argument('--gpu',
                         type=int,
@@ -64,10 +65,10 @@ def main():
         test_conf['mfcc_conf']['dither'] = 0.0
 
     # Determine input dimension from feature type
-    if 'mfcc_conf' in configs['dataset_conf']:
-        configs['input_dim'] = configs['dataset_conf']['mfcc_conf'].get('num_ceps', 40)
-    elif 'fbank_conf' in configs['dataset_conf']:
+    if 'fbank_conf' in configs['dataset_conf']:
         configs['input_dim'] = configs['dataset_conf']['fbank_conf'].get('num_mel_bins', 80)
+    elif 'mfcc_conf' in configs['dataset_conf']:
+        configs['input_dim'] = configs['dataset_conf']['mfcc_conf'].get('num_ceps', 40)
     else:
         configs['input_dim'] = 80  # safe default
 
@@ -80,7 +81,8 @@ def main():
     device = torch.device('cuda' if use_cuda else 'cpu')
     model = model.to(device)
     model.eval()
-    threshold = torch.Tensor([[0.42, 0.35, 0.37, 0.37, 0.4]]).to(device)
+    # threshold = torch.Tensor([[0.42, 0.35, 0.37, 0.37, 0.4]]).to(device)  # old
+    threshold = torch.load(args.threshold).to(device)  # load computed thresholds
     print(f'threshold {threshold}')
 
     # Load CMVN
@@ -95,7 +97,7 @@ def main():
     if wav.dim() == 2 and wav.size(0) > 1:
         wav = wav.mean(dim=0, keepdim=True)
 
-    feats_type = test_conf.get('feats_type', 'mfcc')
+    feats_type = test_conf.get('feats_type', 'fbank')
     if feats_type == 'fbank':
         fbank_conf = test_conf.get('fbank_conf', {})
         feats = torchaudio.compliance.kaldi.fbank(
