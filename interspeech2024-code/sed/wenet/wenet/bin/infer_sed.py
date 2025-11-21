@@ -65,24 +65,26 @@ def get_args():
     return args
 
 def calc_hit_hyp_ref(results, target):
+    '''Calculates positives - hit, hyp, ref'''
+    # hit = true positives
+    # hyp = predicted positives
+    # ref = actual positives
     hit = torch.logical_and(results, target).int().sum(0)
     hyp = results.sum(0)
     ref = target.sum(0)
     return hit, hyp, ref
 
 def calc_rec_prec_f1(hit, hyp, ref):
+    '''Calculates recall, precision, f1 score'''
+    # rec = recall
+    # prec = precision
+    # f1 = f1 score
+
     def to_string(t, do_round=True):
         return '\t'.join([str(round(r * 100, 2)) if do_round else str(r) for r in t.tolist()])
-    # Note to self
-    # Rec: recall
-    # Prec: precision
-    # F1: f1 score
-    # hit: true positives
-    # hyp: predicted positives
-    # ref: actual positives
 
-    rec = hit / ref
-    prec = hit / hyp
+    rec = hit / ref   # true positives / actual positives
+    prec = hit / hyp  # true positives / predicted positives
     f1 = 2 * rec * prec / (rec + prec)
     out = ''
     out += '\t/p\t/b\t/r\t/wr\t/i\n'

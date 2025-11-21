@@ -4,6 +4,35 @@ import torchaudio as audio
 from torch import Tensor
 import torch.nn.functional as F
 
+# binary classification focal loss
+# Taken directly from Yadav 2024 medium article
+class FocalBinaryLoss(nn.Module):
+    def __init__(self, alpha=1, gamma=2, reduction='mean'):
+        super(FocalBinaryLoss, self).__init__()
+        self.alpha = alpha  # controls class imbalance
+        self.gamma = gamma  # focuses on hard examples
+        self.reduction = reduction
+
+    def forward(self, inputs, targets):
+        targets = targets.float()   # fix long - float mismatch error
+
+        # Calculate Binary Cross-Entropy Loss for each sample
+        BCE_loss = nn.functional.binary_cross_entropy_with_logits(inputs, targets, reduction='none')
+        
+        # Compute pt (model confidence on true class)
+        pt = torch.exp(-BCE_loss)
+        
+        # Apply the focal adjustment
+        focal_loss = self.alpha * (1 - pt) ** self.gamma * BCE_loss
+
+        # Apply reduction (mean, sum, or no reduction)
+        if self.reduction == 'mean':
+            return focal_loss.mean()
+        elif self.reduction == 'sum':
+            return focal_loss.sum()
+        else:
+            return focal_loss
+
 class StutterNet(nn.Module):
   def __init__(self, vocab_size, n_mels=80,   # modified for fbank training
                dropout=0.0, use_batchnorm=True, scale=1):
@@ -30,6 +59,8 @@ class StutterNet(nn.Module):
     #                                           f_min=0, power=2.0, hop_length=160, norm='slaney')
     # self.db = audio.transforms.AmplitudeToDB()
     # self.mfcc = audio.transforms.MFCC(16000, 40)
+
+    # Current layers
     self.tdnn_1 = nn.Conv1d(n_mels, int(512*scale), 5, dilation=1)
     self.tdnn_2 = nn.Conv1d(int(512*scale), int(1536*scale), 5, dilation=2)
     self.tdnn_3 = nn.Conv1d(int(1536*scale), int(512*scale), 7, dilation=3)
@@ -43,19 +74,20 @@ class StutterNet(nn.Module):
     self.bn_4 = nn.BatchNorm1d(int(512*scale))
     self.bn_5 = nn.BatchNorm1d(int(1500*scale))
     
-    nn.init.xavier_uniform_(self.fc_1.weight)
+    nn.init.xavier_uniform_(self.fc_1.weight)  # initialization to improve results, taken from 2010 paper
     self.dropout_1 = nn.Dropout(dropout)
     self.fc_2 = nn.Linear(512, 256)
     nn.init.xavier_uniform_(self.fc_1.weight)
     self.dropout_2 = nn.Dropout(dropout)
 
-    self.binary_head = nn.Linear(256, 2)
-    self.class_head = nn.Linear(256, vocab_size)
+    self.binary_head = nn.Linear(256, 2)  # dysfluent/fluent head
+    self.class_head = nn.Linear(256, vocab_size)   # multiclass head, the one I need
 
     self.sig = nn.Sigmoid()
 
-    self.loss_fluent = torch.nn.BCELoss()
-    self.loss_soft = torch.nn.MultiLabelSoftMarginLoss()
+    self.loss_fluent = torch.nn.BCELoss()  # binary classification
+    # self.loss_soft = torch.nn.MultiLabelSoftMarginLoss()  # old multilabel loss
+    self.loss_soft = FocalBinaryLoss()  # new focal loss
 
   def forward(
       self,

@@ -12,6 +12,7 @@ import math
 from tqdm import tqdm
 from sklearn.metrics import precision_recall_curve
 from sklearn.metrics import average_precision_score
+from sklearn.metrics import fbeta_score
 import json
 
 from wenet.dataset.dataset_sed import Dataset
@@ -20,12 +21,14 @@ from wenet.utils.init_model import init_model
 from wenet.utils.checkpoint import load_checkpoint
 from wenet.utils.config import override_config
 
+
 # Debug flag
 DEBUG = True
 
 def get_args():
     p = argparse.ArgumentParser()
     p.add_argument('--config', required=True, help='training config yaml')
+    p.add_argument('--tuning_config', required=True, help='tuning config json with f-beta values')
     p.add_argument('--checkpoint', required=True, help='model checkpoint .pt')
     p.add_argument('--cmvn', required=True, help='path to CMVN file (json or kaldi)')
     p.add_argument('--dataset', required=True, help='data file (data.list)')
@@ -211,19 +214,43 @@ def main():
     except Exception as ex:
         print('Failed to save diagnostics:', ex)
 
+    # end diagnostics
+
+    # Get tuning config info
+    with open(args.tuning_config, 'r') as tf:
+        tuning_data = json.load(tf)
+    f_beta_values = tuning_data.get('f_beta', {})
+    class_labels = ['p', 'b', 'r', 'wr', 'int']  # order must match class order
+
     # Per-class F1-optimal thresholds via PR curve
     num_classes = all_probs.shape[1]
     thresholds = []
+
     for c in range(num_classes):  # for each stutter type
-        y_true = all_labels[:, c].astype(np.int32)
-        y_score = all_probs[:, c]
+        # 0 = p, 1 = b, 2 = r, 3 = wr, 4 = int
+        # all_labels shape: (num_samples, num_classes) (e.g. [[0,1,0,0,0], [1,0,0,0,0], ...])
+        # all_probs shape: (num_samples, num_classes) (e.g. [[0.1,0.8,0.2,0.05,0.01], [0.9,0.1,0.05,0.02,0.03], ...])
+        y_true = all_labels[:, c].astype(np.int32)  # shape: (num_samples,), e.g. [0,1,0,0,0,...]
+        y_probs = all_probs[:, c]  # shape: (num_samples,), e.g. [0.1,0.8,0.2,0.05,0.01,...]
+
         # precision_recall_curve returns precision, recall, thresholds with len(thr)=len(precision)-1
-        prec, rec, thr = precision_recall_curve(y_true, y_score)
-        if thr.size == 0:
-            # degenerate case: pick 0.5
-            thresholds.append(0.5)
-            continue
-        f1 = 2 * prec[1:] * rec[1:] / (prec[1:] + rec[1:] + 1e-9)  # manually compute f1s, since scikit's f1 computer requires a threshold argument; this gives an array of f1s
+        # prec, rec, thr = precision_recall_curve(y_true, y_probs)
+        # # prec shape: (num_classes,)
+        # # rec shape: (num_classes,)
+        # # thr shape: (num_classes-1,)
+
+        # if thr.size == 0:
+        #     # degenerate case: pick 0.5
+        #     thresholds.append(0.5)
+        #     continue
+
+        beta = f_beta_values.get(class_labels[c], 1.0)  # get beta for this class; default to 1.0 if not found
+
+        # Replace f1 computation with fbeta_score from sklearn
+        f1 = fbeta_score(y_true, y_probs, beta=beta,average=None, zero_division=0)
+
+        # f1 = 2 * prec[1:] * rec[1:] / (prec[1:] + rec[1:] + 1e-9)  # manually compute f1s, since scikit's f1 computer requires a threshold argument; this gives an array of f1s
+        
         best_idx = np.argmax(f1)
         thresholds.append(float(thr[best_idx]))  # get best threshold
 
