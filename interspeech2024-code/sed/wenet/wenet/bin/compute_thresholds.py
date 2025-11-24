@@ -121,7 +121,7 @@ def main():
 
     # Run inference
     with torch.no_grad():
-        for batch in tqdm(dev_loader, desc="Inference"):
+        for batch in tqdm(dev_loader, desc="Computing probabilities (inference)"):
             # Dataset returns: keys, feats, target, feats_lengths, target_lengths
             # Following code is basically taken from infer_sed.py and lightly modified
             keys, feats, target, feats_lengths, _ = batch
@@ -234,20 +234,26 @@ def main():
         y_probs = all_probs[:, c]  # shape: (num_samples,), e.g. [0.1,0.8,0.2,0.05,0.01,...]
 
         # precision_recall_curve returns precision, recall, thresholds with len(thr)=len(precision)-1
-        # prec, rec, thr = precision_recall_curve(y_true, y_probs)
-        # # prec shape: (num_classes,)
-        # # rec shape: (num_classes,)
-        # # thr shape: (num_classes-1,)
+        prec, rec, thr = precision_recall_curve(y_true, y_probs)
+        # prec shape: (num_classes,)
+        # rec shape: (num_classes,)
+        # thr shape: (num_classes-1,)
 
-        # if thr.size == 0:
-        #     # degenerate case: pick 0.5
-        #     thresholds.append(0.5)
-        #     continue
+        if thr.size == 0:
+            # degenerate case: pick 0.5
+            thresholds.append(0.5)
+            continue
 
         beta = f_beta_values.get(class_labels[c], 1.0)  # get beta for this class; default to 1.0 if not found
 
         # Replace f1 computation with fbeta_score from sklearn
-        f1 = fbeta_score(y_true, y_probs, beta=beta,average=None, zero_division=0)
+        # It's fine to keep average as binary (default) because we're doing one for each class
+        # f1 weighted = (1+b^2) * tp / (1+b^2)*tp + b^2*fn + fp
+        # prec = TP / (TP + FP) and rec = TP / (TP + FN)
+        # Rewriting gives Fb = (1+b^2) * prec*rec/(b^2*prec + rec)
+        f1 = (1.0 + beta**2) * prec[1:] * rec[1:] / (beta**2 * prec[1:] + rec[1:] + 1e-9)  # avoid div by zero
+        # f1 = fbeta_score(y_true[1:], y_probs[1:], beta=beta, zero_division=0)  # doesn't work because needs to use binary predictions which require thresholds
+        # f1 shape: ideally [thresholds,]; array of floats
 
         # f1 = 2 * prec[1:] * rec[1:] / (prec[1:] + rec[1:] + 1e-9)  # manually compute f1s, since scikit's f1 computer requires a threshold argument; this gives an array of f1s
         

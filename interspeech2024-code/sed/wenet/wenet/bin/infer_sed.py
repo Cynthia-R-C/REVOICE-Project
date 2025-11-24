@@ -30,10 +30,13 @@ from wenet.utils.checkpoint import load_checkpoint
 from wenet.utils.config import override_config
 from wenet.utils.init_model import init_model
 
+# from sklearn.metrics import fbeta_score  # never mind - we need to compute weighted f1 manually
+
 
 def get_args():
     parser = argparse.ArgumentParser(description='recognize with your model')
     parser.add_argument('--config', required=True, help='config file')
+    parser.add_argument('tuning_config', help='tuning config json with fbeta vals')
     parser.add_argument('--dataset', required=True, help='test data file')
     parser.add_argument('--data_type',
                         default='raw',
@@ -96,16 +99,38 @@ def calc_rec_prec_f1(hit, hyp, ref):
     out += 'ref:\t'+to_string(ref, False)+'\n'
     return out
 
+def calc_rec_prec_weighted_f1(hit, hyp, ref, y_true, y_probs, beta):
+    '''Calculates weighted f1 score with beta value from tuning config'''
+    rec = hit / ref   # true positives / actual positives
+    prec = hit / hyp  # true positives / predicted positives
+    f1 = fbeta_score(y_true, y_probs, beta=beta, zero_division=0)
+
+    def to_string(t, do_round=True):
+        return '\t'.join([str(round(r * 100, 2)) if do_round else str(r) for r in t.tolist()])
+
+    out = ''
+    out += '\t/p\t/b\t/r\t/wr\t/i\n'
+    out += 'Rec:\t'+to_string(rec)+'\n'
+    out += 'Prec:\t'+to_string(prec)+'\n'
+    out += 'F1:\t'+to_string(f1)+'\n'
+    out += 'hit:\t'+to_string(hit, False)+'\n'
+    out += 'hyp:\t'+to_string(hyp, False)+'\n'
+    out += 'ref:\t'+to_string(ref, False)+'\n'
+    return out
+
 def main():
     args = get_args()
     logging.basicConfig(level=logging.DEBUG,
                         format='%(asctime)s %(levelname)s %(message)s')
     os.environ['CUDA_VISIBLE_DEVICES'] = str(args.gpu)
 
+    # Read config file
     with open(args.config, 'r') as fin:
         configs = yaml.load(fin, Loader=yaml.FullLoader)
     if len(args.override_config) > 0:
         configs = override_config(configs, args.override_config)
+
+    # Create and use test config
 
     test_conf = copy.deepcopy(configs['dataset_conf'])
 
@@ -143,11 +168,12 @@ def main():
     else:
         configs['input_dim'] = 80  # safe default
 
-    # Init asr model from configs
+    # Init sed model from configs
     configs['cmvn_file'] = args.cmvn  # add hardcode
     configs['is_json_cmvn'] = True  # add hardcode
     model = init_model(configs)
 
+    # Load model checkpoint and thresholds
     load_checkpoint(model, args.checkpoint)
     use_cuda = args.gpu >= 0 and torch.cuda.is_available()
     device = torch.device('cuda' if use_cuda else 'cpu')
@@ -161,41 +187,57 @@ def main():
     # TODO(Lv Xiang): Support k2 related decoding
     # TODO(Kaixun Huang): Support context graph
     f = open(os.path.join(args.result_dir, 'infer_sed_results.txt'), 'w')
+
+    # Begin inference
     with torch.no_grad():
+
+        # Metrics for actual model use
         hit_all = torch.Tensor([0, 0, 0, 0, 0]).to(device)
         hyp_all = torch.Tensor([0, 0, 0, 0, 0]).to(device)
         ref_all = torch.Tensor([0, 0, 0, 0, 0]).to(device)
+
         for batch_idx, batch in enumerate(test_data_loader):
-            keys, feats, target, feats_lengths, target_lengths = batch
+            # target = unprocessed y_true labels
+            keys, feats, target_actual, feats_lengths, target_lengths = batch
             feats = feats.to(device)
-            target = target.to(device)
+
+            target_actual = target_actual.to(device)
+            labels_actual = target_actual.int()  # what is this shape?
+
             feats_lengths = feats_lengths.to(device)
             target_lengths = target_lengths.to(device)
-            results = model.decode(
+
+            results_actual = model.decode(      # results = probs
                 feats,
                 feats_lengths)
-            results = (results > threshold).int()
-            hit, hyp, ref = calc_hit_hyp_ref(results, target)
+            results_actual = (results_actual > threshold).int()
+
+            hit, hyp, ref = calc_hit_hyp_ref(results_actual, target_actual)
             hit_all += hit
             hyp_all += hyp
             ref_all += ref
             #logging.info(f'batch: {batch_idx}')
 
+        # Do again but for random baseline
         hit_rand = torch.Tensor([0, 0, 0, 0, 0]).to(device)
         hyp_rand = torch.Tensor([0, 0, 0, 0, 0]).to(device)
         ref_rand = torch.Tensor([0, 0, 0, 0, 0]).to(device)
         for batch_idx, batch in enumerate(test_data_loader):
-            keys, feats, target, feats_lengths, target_lengths = batch
-            target = target.to(device)
-            results = torch.randint(0, 2, target.shape, device=device)
-            hit, hyp, ref = calc_hit_hyp_ref(results, target)
+            keys, feats, target_rand, feats_lengths, target_lengths = batch
+            target_rand = target_rand.to(device)
+            labels_rand = target_rand.int()
+            results_rand = torch.randint(0, 2, target_rand.shape, device=device)
+            hit, hyp, ref = calc_hit_hyp_ref(results_rand, target_rand)
             hit_rand += hit
             hyp_rand += hyp
             ref_rand += ref
             #logging.info(f'batch: {batch_idx}')
 
-    stats_all = calc_rec_prec_f1(hit_all, hyp_all, ref_all)
-    stats_rand = calc_rec_prec_f1(hit_rand, hyp_rand, ref_rand)
+    # Get beta values from config
+
+    stats_all = calc_rec_prec_weighted_f1(hit_all, hyp_all, ref_all, labels_actual.cpu().numpy(), results_actual.cpu().numpy(), beta=1.0)
+    # stats_all = calc_rec_prec_f1(hit_all, hyp_all, ref_all)
+    stats_rand = calc_rec_prec_weighted_f1(hit_rand, hyp_rand, ref_rand, labels_rand.cpu().numpy(), results_rand.cpu().numpy())
     print(stats_all)
     print(stats_rand)
 
