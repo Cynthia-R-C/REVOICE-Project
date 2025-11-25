@@ -149,7 +149,7 @@ def main():
         configs = override_config(configs, args.override_config)
 
     # Read tuning config file for f-beta values
-    labels = ['p', 'b', 'r', 'wr', 'int']
+    labels = ['/p', '/b', '/r', '/wr', '/i']
     if args.tuning_config is not None:
         with open(args.tuning_config, 'r') as f:
             tuning_config = json.load(f)

@@ -17,12 +17,12 @@ WR_BETA = 2.5 # recall
 INT_BETA = 0.5  # precision
 
 data = {
-    "f_beta": {
-        "p": P_BETA,
-        "b": B_BETA,
-        "r": R_BETA,
-        "wr": WR_BETA,
-        "int": INT_BETA
+    'f_beta': {
+        '/p': P_BETA,
+        '/b': B_BETA,
+        '/r': R_BETA,
+        '/wr': WR_BETA,
+        '/i': INT_BETA
     }
 }
 
