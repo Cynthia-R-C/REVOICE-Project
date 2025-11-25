@@ -10,11 +10,11 @@ import json
 # Wr: rec > 75, prec > 10
 # Int: rec > 40, prec > 80
 
-P_BETA = 0.55  # precision
-B_BETA = 0.4  # precision
-R_BETA = 2.15  # recall
-WR_BETA = 2.25 # recall
-INT_BETA = 0.8  # precision OR equal
+P_BETA = 0.45  # precision
+B_BETA = 0.3  # precision
+R_BETA = 2.25  # recall
+WR_BETA = 2.3 # recall
+INT_BETA = 0.7  # precision OR equal
 
 data = {
     "f_beta": {
