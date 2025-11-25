@@ -5,16 +5,16 @@ import json
 
 # Target f-beta scores
 # P: rec > 25, prec > 65
-# B: rec > 10, prec > 65
+# B: rec > 10, prec > 50
 # R: rec > 75, prec > 15
 # Wr: rec > 75, prec > 10
 # Int: rec > 40, prec > 80
 
-P_BETA = 0.45  # precision
-B_BETA = 0.3  # precision
-R_BETA = 2.25  # recall
-WR_BETA = 2.3 # recall
-INT_BETA = 0.7  # precision OR equal
+P_BETA = 0.6  # precision
+B_BETA = 0.35  # precision
+R_BETA = 2.5  # recall
+WR_BETA = 2.5 # recall
+INT_BETA = 0.5  # precision
 
 data = {
     "f_beta": {
