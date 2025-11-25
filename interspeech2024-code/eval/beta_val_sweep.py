@@ -4,6 +4,7 @@ import subprocess
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
+import torch
 
 # Constants
 
@@ -27,11 +28,15 @@ OUT_DIR = INFER_RESULT_DIR / 'beta_sweep_results'
 
 # beta sweep configuration
 BETA_MIN = 0.0
-BETA_MAX = 10.0
+BETA_MAX = 5.0
 BETA_STEP = 0.05
 
 # Stutter types
 STUTTER_LABELS = ['/p', '/b', '/r', '/wr', '/i']
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+DEBUG = True
 
 
 # Helper: run command in subprocess and ensure safety
@@ -59,14 +64,16 @@ def update_tuning_config(beta_vals):
     with open(TUNING_CONFIG, 'r') as f:
         tuning_config = json.load(f)
 
-    tuning_config['/p'] = beta_vals['/p']
-    tuning_config['/b'] = beta_vals['/b']
-    tuning_config['/r'] = beta_vals['/r']
-    tuning_config['/wr'] = beta_vals['/wr']
-    tuning_config['/i'] = beta_vals['/i']
+    for lbl, val in beta_vals.items():
+        tuning_config['f_beta'][lbl] = float(val)
 
     with open(TUNING_CONFIG, 'w') as f:
         json.dump(tuning_config, f, indent=4)
+
+    if DEBUG:
+        with open(TUNING_CONFIG, 'r') as f:
+            tuning_config = json.load(f)
+        print(f"Using betas for this run: {tuning_config['f_beta']}")  # check if beta vals are actually changing
 
 
 # Helper: parse precision/recall lines from infer result
@@ -111,6 +118,7 @@ def main():
     prec_curves = {label: [] for label in STUTTER_LABELS}
     rec_curves    = {label: [] for label in STUTTER_LABELS}
 
+    # Sweep over beta values
     for beta in beta_values:
         betas = {
             '/p':   float(beta),
@@ -135,12 +143,16 @@ def main():
             '--dataset', str(DATASET_LIST),
             '--gpu', '0',
             '--output', str(THRESH_OUTPUT),
-            '--graph', 'False'
+            '--graph', 'False'  # no point in graphing every time
         ]
         stdout, stderr = run_cmd(cmd_thresh)
         if stderr and ('Traceback' in stderr or 'Error' in stderr):
             print('compute_threshold.py failed:', stderr)
             continue
+
+        if DEBUG:
+            threshold = torch.load(THRESH_OUTPUT).to(device)  # load computed thresholds
+            print(f'Thresholds: {threshold}')
 
         # 3. Run inference
         cmd_infer = [
@@ -168,6 +180,9 @@ def main():
             continue
 
         prec, rec = parsed
+        if DEBUG:
+            print(f'Precision: {prec}')
+            print(f'Recall: {rec}')
 
         # Store values
         for i, label in enumerate(STUTTER_LABELS):
