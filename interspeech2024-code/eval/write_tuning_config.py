@@ -3,11 +3,11 @@
 
 import json
 
-P_BETA = 0.5  # precision
-B_BETA = 0.5  # precision
-R_BETA = 2.0  # recall
-WR_BETA = 2.0 # recall
-INT_BETA = 0.5  # precision OR equal
+P_BETA = 0.7  # precision
+B_BETA = 0.7  # precision
+R_BETA = 1.5  # recall
+WR_BETA = 2.2 # recall
+INT_BETA = 0.8  # precision OR equal
 
 data = {
     "f_beta": {
