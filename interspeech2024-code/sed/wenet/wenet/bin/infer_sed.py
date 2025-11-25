@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Modified for StutterNet inference - Cynthia Chen 11/10/2025
+# Modified for StutterNet inference - Cynthia Chen
 
 from __future__ import print_function
 
@@ -30,13 +30,16 @@ from wenet.utils.checkpoint import load_checkpoint
 from wenet.utils.config import override_config
 from wenet.utils.init_model import init_model
 
+import json
+import numpy as np
+
 # from sklearn.metrics import fbeta_score  # never mind - we need to compute weighted f1 manually
 
 
 def get_args():
     parser = argparse.ArgumentParser(description='recognize with your model')
     parser.add_argument('--config', required=True, help='config file')
-    parser.add_argument('tuning_config', help='tuning config json with fbeta vals')
+    parser.add_argument('--tuning_config', help='tuning config json with fbeta vals')
     parser.add_argument('--dataset', required=True, help='test data file')
     parser.add_argument('--data_type',
                         default='raw',
@@ -99,11 +102,26 @@ def calc_rec_prec_f1(hit, hyp, ref):
     out += 'ref:\t'+to_string(ref, False)+'\n'
     return out
 
-def calc_rec_prec_weighted_f1(hit, hyp, ref, y_true, y_probs, beta):
+def calc_rec_prec_fbeta(hit, hyp, ref, y_true, y_probs, beta):
     '''Calculates weighted f1 score with beta value from tuning config'''
+    # hit, hyp, ref = 1D tensors of length num_classes
+    # hit[c] = tp for class c
+    # hyp[c] = predicted positives for class c
+    # ref[c] = actual positives for class c
+    # beta[c] = beta value for class c
+
+    tolerance = 1e-9  # to avoid div by zero
     rec = hit / ref   # true positives / actual positives
     prec = hit / hyp  # true positives / predicted positives
-    f1 = fbeta_score(y_true, y_probs, beta=beta, zero_division=0)
+
+    if beta is None:
+        # standard f1
+        f1 = 2.0 * rec * prec / (rec + prec + tolerance)
+    else:
+        # weighted f1
+        beta = torch.tensor(beta, dtype=rec.dtype, device=rec.device)
+        f1 = (1.0 + beta**2) * prec * rec / (beta**2 * prec + rec + tolerance)
+    # f1 = fbeta_score(y_true, y_probs, beta=beta, zero_division=0) # got rid of this for consistency in evaluation
 
     def to_string(t, do_round=True):
         return '\t'.join([str(round(r * 100, 2)) if do_round else str(r) for r in t.tolist()])
@@ -112,7 +130,7 @@ def calc_rec_prec_weighted_f1(hit, hyp, ref, y_true, y_probs, beta):
     out += '\t/p\t/b\t/r\t/wr\t/i\n'
     out += 'Rec:\t'+to_string(rec)+'\n'
     out += 'Prec:\t'+to_string(prec)+'\n'
-    out += 'F1:\t'+to_string(f1)+'\n'
+    out += 'Fbeta:\t'+to_string(f1)+'\n'
     out += 'hit:\t'+to_string(hit, False)+'\n'
     out += 'hyp:\t'+to_string(hyp, False)+'\n'
     out += 'ref:\t'+to_string(ref, False)+'\n'
@@ -129,6 +147,15 @@ def main():
         configs = yaml.load(fin, Loader=yaml.FullLoader)
     if len(args.override_config) > 0:
         configs = override_config(configs, args.override_config)
+
+    # Read tuning config file for f-beta values
+    labels = ['p', 'b', 'r', 'wr', 'int']
+    if args.tuning_config is not None:
+        with open(args.tuning_config, 'r') as f:
+            tuning_config = json.load(f)
+            beta_vals = np.array([tuning_config.get(name, 1.0) for name in labels], dtype=np.float32)
+    else:
+        beta_vals = None
 
     # Create and use test config
 
@@ -235,9 +262,9 @@ def main():
 
     # Get beta values from config
 
-    stats_all = calc_rec_prec_weighted_f1(hit_all, hyp_all, ref_all, labels_actual.cpu().numpy(), results_actual.cpu().numpy(), beta=1.0)
+    stats_all = calc_rec_prec_fbeta(hit_all, hyp_all, ref_all, labels_actual.cpu().numpy(), results_actual.cpu().numpy(), beta=beta_vals)
     # stats_all = calc_rec_prec_f1(hit_all, hyp_all, ref_all)
-    stats_rand = calc_rec_prec_weighted_f1(hit_rand, hyp_rand, ref_rand, labels_rand.cpu().numpy(), results_rand.cpu().numpy())
+    stats_rand = calc_rec_prec_fbeta(hit_rand, hyp_rand, ref_rand, labels_rand.cpu().numpy(), results_rand.cpu().numpy(), beta=beta_vals)
     print(stats_all)
     print(stats_rand)
 
