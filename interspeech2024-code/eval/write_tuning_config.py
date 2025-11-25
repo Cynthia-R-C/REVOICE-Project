@@ -3,10 +3,17 @@
 
 import json
 
-P_BETA = 0.7  # precision
-B_BETA = 0.7  # precision
-R_BETA = 1.5  # recall
-WR_BETA = 2.2 # recall
+# Target f-beta scores
+# P: rec > 25, prec > 65
+# B: rec > 10, prec > 65
+# R: rec > 75, prec > 15
+# Wr: rec > 75, prec > 10
+# Int: rec > 40, prec > 80
+
+P_BETA = 0.55  # precision
+B_BETA = 0.4  # precision
+R_BETA = 2.15  # recall
+WR_BETA = 2.25 # recall
 INT_BETA = 0.8  # precision OR equal
 
 data = {
