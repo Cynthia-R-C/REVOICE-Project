@@ -25,6 +25,7 @@ CHECKPOINT     = ROOT / 'interspeech2024-code/exp/stutternet_en/36.pt'
 THRESH_OUTPUT  = ROOT / 'interspeech2024-code/eval/thresholds.pt'
 INFER_RESULT_DIR = ROOT / 'interspeech2024-code/eval'
 OUT_DIR = INFER_RESULT_DIR / 'beta_sweep_results'
+DEBUG_LOG = OUT_DIR / 'beta_sweep_log.txt'
 
 # beta sweep configuration
 BETA_MIN = 0.0
@@ -74,6 +75,8 @@ def update_tuning_config(beta_vals):
         with open(TUNING_CONFIG, 'r') as f:
             tuning_config = json.load(f)
         print(f"Using betas for this run: {tuning_config['f_beta']}")  # check if beta vals are actually changing
+        with open(DEBUG_LOG, 'a') as logf:
+            logf.write(f"Using betas for this run: {tuning_config['f_beta']}\n")
 
 
 # Helper: parse precision/recall lines from infer result
@@ -111,6 +114,12 @@ def sanitize(label):
 # Main beta sweep
 
 def main():
+    # Log start
+    if DEBUG:
+        # Clear log file and prepare to write
+        with open(DEBUG_LOG, 'w') as logf:
+            logf.write('Beta Sweep Log\n\n')
+
     # Prepare storage for curves
     beta_values = np.arange(BETA_MIN, BETA_MAX + BETA_STEP, BETA_STEP)
 
@@ -130,6 +139,10 @@ def main():
 
         print(f'\n==== Testing beta = {beta:.2f} ====')
 
+        if DEBUG:
+            with open(DEBUG_LOG, 'a') as logf:
+                logf.write(f'\n==== Testing beta = {beta:.2f} ====\n')
+
         # 1. Update tuning config
         update_tuning_config(betas)
 
@@ -148,11 +161,16 @@ def main():
         stdout, stderr = run_cmd(cmd_thresh)
         if stderr and ('Traceback' in stderr or 'Error' in stderr):
             print('compute_threshold.py failed:', stderr)
+            with open(DEBUG_LOG, 'a') as logf:
+                logf.write(f'compute_threshold.py failed: {stderr}\n')
             continue
 
         if DEBUG:
             threshold = torch.load(THRESH_OUTPUT).to(device)  # load computed thresholds
             print(f'Thresholds: {threshold}')
+            with open(DEBUG_LOG, 'a') as logf:
+                logf.write(f'Thresholds: {threshold}\n')
+
 
         # 3. Run inference
         cmd_infer = [
@@ -183,6 +201,9 @@ def main():
         if DEBUG:
             print(f'Precision: {prec}')
             print(f'Recall: {rec}')
+            with open(DEBUG_LOG, 'a') as logf:
+                logf.write(f'Precision: {prec}\n')
+                logf.write(f'Recall: {rec}\n')
 
         # Store values
         for i, label in enumerate(STUTTER_LABELS):
