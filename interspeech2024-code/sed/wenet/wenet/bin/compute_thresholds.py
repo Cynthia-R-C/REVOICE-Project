@@ -220,7 +220,7 @@ def main():
     with open(args.tuning_config, 'r') as tf:
         tuning_data = json.load(tf)
     f_beta_values = tuning_data.get('f_beta', {})
-    class_labels = ['/p', '/b', '/r', '/wr', '/int']  # order must match class order
+    class_labels = ['/p', '/b', '/r', '/wr', '/i']  # order must match class order
 
     # Per-class F1-optimal thresholds via PR curve
     num_classes = all_probs.shape[1]
