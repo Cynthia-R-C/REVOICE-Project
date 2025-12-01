@@ -23,6 +23,8 @@ def destutter(audio, txt, stutter_model):
     if '/i' in stutter_types:
         txt = remove_i_stutter(audio, txt)
 
+    return audio, txt
+
 def remove_r_stutter(txt):
     '''Remove repetitions of initial sounds in words from the transcribed text'''
     # Simple approach: look for patterns like s-s-s-

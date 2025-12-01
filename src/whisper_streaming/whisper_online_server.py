@@ -13,6 +13,8 @@ import argparse
 import os
 import logging
 import numpy as np
+import math
+import re
 
 # Calculating WER and latency
 import time
@@ -225,7 +227,6 @@ class ServerProcessor:
         self.tts_queue.put(txt)
         logger.info("New text added to TTS queue.")
 
-
     def process(self):
         '''handle one stt client connection'''
         self.online_asr_proc.init()
@@ -234,12 +235,86 @@ class ServerProcessor:
             if a is None:
                 break
             self.online_asr_proc.insert_audio_chunk(a)
-            o = online.process_iter()
+            o = online.process_iter()   # o[0]: beg, o[1]: end, o[2]: text string
+
+            # ============== DESTUTTERING LOGIC ================ #
+
+            ## Simple: SOUND REP ##
+
+            # Just remove all stuff like s-s-s
+            # Logic copied over from remove_r_stutter() in destutter.py
+            pattern = r'\b([a-zA-Z]{1,3})(?:-\1){1,}-([a-zA-Z]+)'
+            o[2] = re.sub(pattern, r'\2', o[2])  # skipping text variable bc it's easier to just update o[2] directly
+
+            # More complex - word rep, interjections, prolongations, blocks
+            t_to_buffer = online.buffer_time_offset  # time between global stream start and audio buffer start
+            audio_buffer = online.audio_buffer  # current audio buffer - a list of samples
+            beg_time = o[0]  # beg time of text (global)
+            end_time = o[1]  # end time of text (global)
+            text = o[2]      # text of current segment
+
+            # Sliding 3s window over audio corresponding to text segment
+            hop = 0.05 * SAMPLING_RATE   # could increase this if latency is too high
+            window_size = 3.0 * SAMPLING_RATE  # 3s window; window size in samples
+            loc_start = (beg_time - t_to_buffer) * SAMPLING_RATE
+            loc_end = (end_time - t_to_buffer) * SAMPLING_RATE
+            words = text.split(' ')
+            window_probs = {'/p': [], '/b': [], '/r': [], '/wr': [], '/i': []}
+
+            # Getting the stutter probabilities for each window
+            for win_start in range(loc_start, loc_end - window_size, hop):
+                audio_segment = audio_buffer[int(win_start):int(win_start + window_size)]  # get audio segment corresponding to text
+                stutter_probs = self.get_audio_stutter_probs(audio_segment)  # get stutter probabilities for this audio segment
+                # sttuter_probs is like {'/p': 0.7, '/b': 0.2, ...}
+                
+                # Store stutter probabilities for this window
+                for label in window_probs.keys():
+                    window_probs[label].append(stutter_probs[label])  # append the prob for this window
+                    # window_probs is like {'/p': [p0, p1, ...], '/b': [...], ...}
+            
+            # Find the times of max probs for each label
+            THRESH_PATH = 'C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\interspeech2024-code\\eval\\thresholds.pt'
+            thresholds = torch.load(THRESH_PATH).to(device)  # load computed thresholds
+            t_maxs = self.get_max_times_local(window_probs, thresholds)  # looks like: {'/p': 12.3, '/b': None, ...}
+            # So by now via t_maxs it is has been determined whether a stutter type is actually present or not
+
+
+             ## Medium: WORD REP ##
+
+            # Only run this if word rep detected in model(?) might not be necessary, could just run this without model
+            if t_maxs['/wr'] is not None:
+                # Logic copied over from remove_wr_stutter() in destutter.py
+                pattern = r'\b([a-zA-Z]+)(?: \1){2,}\b'
+                o[2] = re.sub(pattern, r'\1', o[2])  # skipping text variable bc it's easier to just update o[2] directly
+
+            # Approximate local start/end times for each word in the text segment
+            segment_duration = end_time - beg_time
+            word_times_local = self.estimate_word_times_local(words, segment_duration)
+
+            # if any stutter detected, find the corresponding word index(s)
+            stutter_word_idxs = self.get_stutter_times_local(word_times_local, t_maxs)  # looks like: {'/p': 3, '/b': None, ...}
+
+
+            ## Complex: INTERJECTIONS ##
+
+            # Remove interjection word if it's detected
+            if stutter_word_idxs['/i'] is not None:
+                idx = stutter_word_idxs['/i']
+                words.pop(idx)  # remove the interjection word
+                text = ' '.join(words)
+                o[2] = text  # update the text in o[2]
+
+            
+            ## Remaning: PROLONGATIONS, BLOCKS ##
+            # To be implemented in TTS methods
+
+            # ============== END DESTUTTERING LOGIC ================ #
+            
             try:
                 self.send_result(o)  # sends it to the client and if toggled on to the transcript file and TTS queue
 
                 # Now add latencies of that audio just then to latencies list
-                endTime = time.perf_counter()
+                endTime = time.perf_counter()  # perf_counter is more precise
                 for startTime in startTimes:
                     latencies.append(endTime - startTime)
 
