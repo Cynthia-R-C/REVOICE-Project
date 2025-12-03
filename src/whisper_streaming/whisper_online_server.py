@@ -13,13 +13,16 @@ import argparse
 import os
 import logging
 import numpy as np
-import math
-import re
 
 # Calculating WER and latency
 import time
 from jiwer import wer
 reference_file = 'english_patient.txt'  # reference text for WER calculation
+
+# Destuttering
+import sys
+sys.path.append(r'C:\\Users\\crc24\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\src\\destutter')  # add destutter folder to aths to search
+from destutterer import Destutterer
 
 logger = logging.getLogger(__name__)
 parser = argparse.ArgumentParser()
@@ -188,44 +191,28 @@ class ServerProcessor:
             logger.debug("No text in this segment")
             return None
         
-    def format_output_transcript_text_only(self,o):
-        '''A copy of the above method except doesn't print the timestamps; for my own testing purposes
-        Does not print out the text to the terminal'''
-        if o[0] is not None:
-            return o[2]  # this is the text portion
-        else:
-            return None
 
     def send_result(self, o):
         '''Edited to do all of the following:
          1. Send the current transcript to the STT client
          2. Update the transcript text file if toggled'''
-        msg = self.format_output_transcript(o)
+        msg = self.format_output_transcript(o)  # string of timestamps + pure text
         if msg is not None:
             self.connection.send(msg)  # send to STT client
-            self.put_to_tts(self.strip_timestamps(msg))
+            self.put_to_tts(o)
         
-        if SAVE_TRANSCRIPT:
-            # Write the text to the output transcript file
-            txt = self.format_output_transcript_text_only(o)
-            if txt is not None:
-                self.out_file.write(txt)
+            if SAVE_TRANSCRIPT:
+                # Write the text to the output transcript file
+                self.out_file.write(o[2])
 
-    def strip_timestamps(self, txt):
-        '''Strips the timestamps from the text'''
-        parts = txt.split(' ')
-        if len(parts) > 2:
-            return ' '.join(parts[2:])  # join all parts after the first two (the timestamps)
-        else:
-            return ''  # if there is no text after the timestamps, return empty string
 
-    def put_to_tts(self, txt):
-        '''Puts the newly generated STT text to the TTS queue;
+    def put_to_tts(self, o):
+        '''Puts the newly generated STT o to the TTS queue;
         Will be called no matter if TTS flag is on or off
         Assumes tts_queue is not None
         Assumes text is not None'''
-        self.tts_queue.put(txt)
-        logger.info("New text added to TTS queue.")
+        self.tts_queue.put(o)
+        logger.info("New o added to TTS queue.")
 
     def process(self):
         '''handle one stt client connection'''
@@ -237,78 +224,36 @@ class ServerProcessor:
             self.online_asr_proc.insert_audio_chunk(a)
             o = online.process_iter()   # o[0]: beg, o[1]: end, o[2]: text string
 
-            # ============== DESTUTTERING LOGIC ================ #
+            if o[0] is not None:  # if audio is not blank
 
-            ## Simple: SOUND REP ##
+                # ============== STT DESTUTTERING LOGIC ================ #
 
-            # Just remove all stuff like s-s-s
-            # Logic copied over from remove_r_stutter() in destutter.py
-            pattern = r'\b([a-zA-Z]{1,3})(?:-\1){1,}-([a-zA-Z]+)'
-            o[2] = re.sub(pattern, r'\2', o[2])  # skipping text variable bc it's easier to just update o[2] directly
+                t_to_buffer = online.buffer_time_offset  # time between global stream start and audio buffer start
+                audio_buffer = online.audio_buffer  # current audio buffer - a list of samples
+                beg_time = o[0]  # beg time of text (global)
+                end_time = o[1]  # end time of text (global)
+                text = o[2]      # text of current segment
 
-            # More complex - word rep, interjections, prolongations, blocks
-            t_to_buffer = online.buffer_time_offset  # time between global stream start and audio buffer start
-            audio_buffer = online.audio_buffer  # current audio buffer - a list of samples
-            beg_time = o[0]  # beg time of text (global)
-            end_time = o[1]  # end time of text (global)
-            text = o[2]      # text of current segment
-
-            # Sliding 3s window over audio corresponding to text segment
-            hop = 0.05 * SAMPLING_RATE   # could increase this if latency is too high
-            window_size = 3.0 * SAMPLING_RATE  # 3s window; window size in samples
-            loc_start = (beg_time - t_to_buffer) * SAMPLING_RATE
-            loc_end = (end_time - t_to_buffer) * SAMPLING_RATE
-            words = text.split(' ')
-            window_probs = {'/p': [], '/b': [], '/r': [], '/wr': [], '/i': []}
-
-            # Getting the stutter probabilities for each window
-            for win_start in range(loc_start, loc_end - window_size, hop):
-                audio_segment = audio_buffer[int(win_start):int(win_start + window_size)]  # get audio segment corresponding to text
-                stutter_probs = self.get_audio_stutter_probs(audio_segment)  # get stutter probabilities for this audio segment
-                # sttuter_probs is like {'/p': 0.7, '/b': 0.2, ...}
+                destutterer = Destutterer(t_to_buffer, audio_buffer, beg_time, end_time, text, sr=SAMPLING_RATE)
+                t_maxs, stutter_word_idxs = destutterer.get_destutter_info('stt')  # get t_maxs and stutter word indices
                 
-                # Store stutter probabilities for this window
-                for label in window_probs.keys():
-                    window_probs[label].append(stutter_probs[label])  # append the prob for this window
-                    # window_probs is like {'/p': [p0, p1, ...], '/b': [...], ...}
-            
-            # Find the times of max probs for each label
-            THRESH_PATH = 'C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\interspeech2024-code\\eval\\thresholds.pt'
-            thresholds = torch.load(THRESH_PATH).to(device)  # load computed thresholds
-            t_maxs = self.get_max_times_local(window_probs, thresholds)  # looks like: {'/p': 12.3, '/b': None, ...}
-            # So by now via t_maxs it is has been determined whether a stutter type is actually present or not
+                ## Simple: SOUND REP ##
+                destutterer.r_destutter()
+
+                ## Medium: WORD REP ##
+                # Only run this if word rep detected in model(?) might not be necessary, could just run this without model
+                if t_maxs['/wr'] is not None:
+                    destutterer.wr_destutter()
+
+                ## Complex: INTERJECTIONS ##
+                destutterer.i_destutter(stutter_word_idxs)
+
+                # Update output o with destuttered text
+                new_txt = destutterer.get_text()
+                o = (o[0], o[1], new_txt)
 
 
-             ## Medium: WORD REP ##
-
-            # Only run this if word rep detected in model(?) might not be necessary, could just run this without model
-            if t_maxs['/wr'] is not None:
-                # Logic copied over from remove_wr_stutter() in destutter.py
-                pattern = r'\b([a-zA-Z]+)(?: \1){2,}\b'
-                o[2] = re.sub(pattern, r'\1', o[2])  # skipping text variable bc it's easier to just update o[2] directly
-
-            # Approximate local start/end times for each word in the text segment
-            segment_duration = end_time - beg_time
-            word_times_local = self.estimate_word_times_local(words, segment_duration)
-
-            # if any stutter detected, find the corresponding word index(s)
-            stutter_word_idxs = self.get_stutter_times_local(word_times_local, t_maxs)  # looks like: {'/p': 3, '/b': None, ...}
-
-
-            ## Complex: INTERJECTIONS ##
-
-            # Remove interjection word if it's detected
-            if stutter_word_idxs['/i'] is not None:
-                idx = stutter_word_idxs['/i']
-                words.pop(idx)  # remove the interjection word
-                text = ' '.join(words)
-                o[2] = text  # update the text in o[2]
-
-            
-            ## Remaning: PROLONGATIONS, BLOCKS ##
-            # To be implemented in TTS methods
-
-            # ============== END DESTUTTERING LOGIC ================ #
+                # ============== END DESTUTTERING LOGIC ================ #
             
             try:
                 self.send_result(o)  # sends it to the client and if toggled on to the transcript file and TTS queue
@@ -351,7 +296,7 @@ class Server:
 
     def __init__(self, sock, HOST, PORT):
         '''Initializes TCP socket over IPv4. Accepts 2 connections max.'''
-        self.tts_queue = queue.Queue()  # queue for TTS text to be sent to TTS client
+        self.tts_queue = queue.Queue()  # queue for STT o to be sent to TTS client
         self.socket = sock
         self.socket.bind((HOST, PORT))
         self.socket.listen(2)  # allow 2 clients to wait in line
@@ -388,8 +333,10 @@ class Server:
             try:
                 # As long as queue is not empty, get text from queue, convert it to audio, and send it over
                 if not tts_queue.empty():
-                    text = tts_queue.get()  # this should also remove it from the queue
-                    logger.debug("Text received from TTS queue.")
+                    o = tts_queue.get()  # this should also remove it from the queue
+                    logger.debug("o received from TTS queue.")
+
+                    text = o[2]
 
                     # Generate speech
                     logger.debug("GENERATING TTS audio...")
@@ -412,6 +359,28 @@ class Server:
                         # Debugging
                         print(f"Resampled wav shape: {wav.shape}, dtype: {wav.dtype}")
                         sf.write(f'resampled_{SAMPLING_RATE}hz.wav', wav, SAMPLING_RATE)  # Save after resampling
+
+                    
+                    # ============== TTS DESTUTTERING LOGIC ================ #
+                    # TTS audio destuttering logic: prolongations & blocks
+
+                    t_to_buffer = online.buffer_time_offset  # time between global stream start and audio buffer start
+                    audio_buffer = online.audio_buffer  # current audio buffer - a list of samples
+                    beg_time = o[0]  # beg time of text (global)
+                    end_time = o[1]  # end time of text (global)
+
+                    destutterer = Destutterer(t_to_buffer, audio_buffer, beg_time, end_time, text, sr=SAMPLING_RATE)
+                    p_times, b_times = destutterer.get_destutter_info('tts')  # get segment times to cut
+
+                    ## PROLONGATION ##
+                    wav = destutterer.p_destutter(wav, p_times[0], p_times[1])
+
+                    ## BLOCK ##
+                    wav = destutterer.b_destutter(wav, p_times[0], p_times[1])
+
+
+                    # ============== DESTUTTERING LOGIC END ================ #
+
 
                     # Convert to 16-bit PCM
                     wav_pcm = (wav * 32767).astype(np.int16)
