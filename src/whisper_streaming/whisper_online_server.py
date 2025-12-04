@@ -14,20 +14,15 @@ import os
 import logging
 import numpy as np
 
-# Calculating WER and latency
+# ======= Calculating WER and latency ======= #
 import time
 from jiwer import wer
 reference_file = 'english_patient.txt'  # reference text for WER calculation
 
-# Destuttering
-import sys
-sys.path.append(r'C:\\Users\\crc24\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\src\\destutter')  # add destutter folder to aths to search
-from destutterer import Destutterer
-
+# ======= Logging and Arguments ======= #
 logger = logging.getLogger(__name__)
 parser = argparse.ArgumentParser()
 
-# server options
 parser.add_argument("--host", type=str, default='localhost')
 parser.add_argument("--port", type=int, default=9000)
 parser.add_argument("--warmup-file", type=str, dest="warmup_file", 
@@ -39,29 +34,48 @@ args = parser.parse_args()
 
 set_logging(args,logger,other="")
 
-# setting whisper object by args 
+
+# ======= DESTUTTERING IMPORTS/CONSTANTS ======= #
+import sys
+destutter_dir = os.path.abspath('C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\src\\destutter')
+sys.path.append(destutter_dir)  # add destutter folder to paths to search
+from destutterer import Destutterer
 
 SAMPLING_RATE = 16000
+CONFIG_PATH = 'C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\interspeech2024-code\\sed\\examples\\stutter_event\\s0\\conf\\train_stutternet.yaml'
+CKPT_PATH = 'C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\interspeech2024-code\\exp\\stutternet_en\\36.pt'
+CMVN_PATH = 'C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\interspeech2024-code\\data\\train\\global_cmvn'
 
+# Device agnostic code
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
+destutterer = Destutterer(config_path=CONFIG_PATH,
+                          ckpt_path=CKPT_PATH,
+                          cmvn_path=CMVN_PATH,
+                          sr=SAMPLING_RATE,
+                          device=device)
+
+# ======= Whisper Settings ======= #
 size = args.model
 language = args.lan
 asr, online = asr_factory(args)
 min_chunk = args.min_chunk_size
 latencies = []    # create list of latencies to track latency of each audio chunk so as to calculate average latency at end
 
-# Device agnostic code
-device = "cuda" if torch.cuda.is_available() else "cpu"
-
-# Set up TTS
+# ======= Set Up TTS ======= #
 # Initialize CoquiTTS with the target model name
 tts = TTS("tts_models/en/ljspeech/fast_pitch").to(device)
 
 # TTS Constants
 TTS_SR = tts.synthesizer.output_sample_rate  # TTS sampling rate
 
-# Toggles
+# ======= Other Toggles ======= #
 SAVE_TRANSCRIPT = True
 tts_flag = False  # becomes true when a TTS client connects to the server
+
+
+
+
 
 # warm up the ASR because the very first transcribe takes more time than the others. 
 # Test results in https://github.com/ufal/whisper_streaming/pull/81
@@ -233,9 +247,8 @@ class ServerProcessor:
                 beg_time = o[0]  # beg time of text (global)
                 end_time = o[1]  # end time of text (global)
                 text = o[2]      # text of current segment
-
-                destutterer = Destutterer(t_to_buffer, audio_buffer, beg_time, end_time, text, sr=SAMPLING_RATE)
-                t_maxs, stutter_word_idxs = destutterer.get_destutter_info('stt')  # get t_maxs and stutter word indices
+                
+                t_maxs, stutter_word_idxs = destutterer.get_destutter_info('stt', t_to_buffer, audio_buffer, beg_time, end_time, text)  # get t_maxs and stutter word indices
                 
                 ## Simple: SOUND REP ##
                 destutterer.r_destutter()
@@ -358,7 +371,7 @@ class Server:
 
                         # Debugging
                         print(f"Resampled wav shape: {wav.shape}, dtype: {wav.dtype}")
-                        sf.write(f'resampled_{SAMPLING_RATE}hz.wav', wav, SAMPLING_RATE)  # Save after resampling
+                        soundfile.write(f'resampled_{SAMPLING_RATE}hz.wav', wav, SAMPLING_RATE)  # Save after resampling
 
                     
                     # ============== TTS DESTUTTERING LOGIC ================ #
@@ -369,14 +382,13 @@ class Server:
                     beg_time = o[0]  # beg time of text (global)
                     end_time = o[1]  # end time of text (global)
 
-                    destutterer = Destutterer(t_to_buffer, audio_buffer, beg_time, end_time, text, sr=SAMPLING_RATE)
-                    p_times, b_times = destutterer.get_destutter_info('tts')  # get segment times to cut
+                    p_times, b_times = destutterer.get_destutter_info('tts', t_to_buffer, audio_buffer, beg_time, end_time, text)  # get segment times to cut
 
                     ## PROLONGATION ##
                     wav = destutterer.p_destutter(wav, p_times[0], p_times[1])
 
                     ## BLOCK ##
-                    wav = destutterer.b_destutter(wav, p_times[0], p_times[1])
+                    wav = destutterer.b_destutter(wav, b_times[0], b_times[1])
 
 
                     # ============== DESTUTTERING LOGIC END ================ #

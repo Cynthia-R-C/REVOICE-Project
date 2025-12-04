@@ -7,33 +7,66 @@ import math
 import numpy as np
 import re
 
+# Inference imports
+import sys
+import os
+bin_dir = os.path.abspath('C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\interspeech2024-code\\sed\\wenet\\wenet\\bin')
+sys.path.append(bin_dir)  # add destutter folder to paths to search
+from infer_sed_single import StutterSED
+
+
 class Destutterer:
     '''Class to handle destuttering using StutterNet model'''
 
-    def __init__(self, t_to_buffer, audio_buffer, beg_time, end_time, text, sr=16000):
-        '''Initialize all needed parameters'''
-        self.t_to_buffer = t_to_buffer  # time between global stream start and audio buffer start
-        self.audio_buffer = audio_buffer  # current audio buffer - a numpy array of samples
-        self.beg_time = beg_time  # global start time of text (s)
-        self.end_time = end_time  # global end time of text (s)
-        self.text = text  # text segment
-        self.words = self.text.split(' ')  # list of words in text segment
+    def __init__(self, config_path, ckpt_path, cmvn_path, sr=16000, device='cpu'):
+        '''Declare and initialize all needed parameters
+        For StutterSED model: aud_type and override_config go by defaut parameters (arr and []) so no need to initialize here'''
+
+        # Segment-specific instance variables are declared and intialized in get_destutter_info()
+        self.t_to_buffer = None  # time between global stream start and audio buffer start
+        self.audio_buffer = None  # current audio buffer - a numpy array of samples
+        self.beg_time = None  # global start time of text (s)
+        self.end_time = None  # global end time of text (s)
+        self.text = ''  # text segment
+        self.words = []  # list of words in text segment
+
+        # Non-segment-specific instance variables are initialized here
+        self.config = config_path
+        self.checkpoint = ckpt_path
+        self.cmvn = cmvn_path
         self.sr = sr # sampling rate
+        self.device = device
+
+        # Load class StutterSED
+        self.stutter_model = StutterSED(self.config, self.checkpoint, self.cmvn, gpu=0 if self.device=='cuda' else -1)
 
     def get_text(self):
         '''Returns current text'''
         return self.text
 
-    def get_destutter_info(self, client_type):
+    def get_destutter_info(self, client_type, t_to_buffer, audio_buffer, beg_time, end_time, text):
         '''Returns info needed for destuttering to call individual stutter_type methods separately
         Returns different info based on stt or tts destuttering
         stt: sound rep, word rep, interjections
-        tts: prolongations, blocks'''
+        tts: prolongations, blocks
+        
+        t_to_buffer  # time between global stream start and audio buffer start
+        audio_buffer  # current audio buffer - a numpy array of samples
+        beg_time  # global start time of text (s)
+        end_time  # global end time of text (s)
+        text  # text segment'''
 
         # CODE NEEDED FOR ALL DESTUTTERING
 
+        # Initialize all instance variables with their new values
+        self.t_to_buffer = t_to_buffer  # time between global stream start and audio buffer start
+        self.audio_buffer = audio_buffer  # current audio buffer - a numpy array of samples
+        self.beg_time = beg_time  # global start time of text (s)
+        self.end_time = end_time  # global end time of text (s)
+        self.text = text  # text segment
+        self.words = text.split() # list of words in text segment
+
         # Sliding 3s window over audio corresponding to text segment
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         hop = 0.05 * self.sr   # could increase this if latency is too high
         window_size = 3.0 * self.sr  # 3s window; window size in samples
         loc_start = (self.beg_time - self.t_to_buffer) * self.sr
@@ -59,7 +92,7 @@ class Destutterer:
         
         # Find the times of max probs for each label
         THRESH_PATH = 'C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\interspeech2024-code\\eval\\thresholds.pt'
-        thresholds_tensor = torch.load(THRESH_PATH).to(device)  # load computed thresholds
+        thresholds_tensor = torch.load(THRESH_PATH).to(self.device)  # load computed thresholds
 
         # STT: care about /r, /wr, /i
         if client_type == 'stt':   # note to self: can later modify this to only calculate values for needed stt stutter types to reduce latency
@@ -123,7 +156,6 @@ class Destutterer:
         self.r_destutter()
 
         # Sliding 3s window over audio corresponding to text segment
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         hop = 0.05 * self.sr   # could increase this if latency is too high
         window_size = 3.0 * self.sr  # 3s window; window size in samples
         loc_start = (self.beg_time - self.t_to_buffer) * self.sr
@@ -153,7 +185,7 @@ class Destutterer:
         
         # Find the times of max probs for each label
         THRESH_PATH = 'C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\interspeech2024-code\\eval\\thresholds.pt'
-        thresholds = torch.load(THRESH_PATH).to(device)  # load computed thresholds
+        thresholds = torch.load(THRESH_PATH).to(self.device)  # load computed thresholds
         t_maxs = self.get_max_times_local(center_ts, window_probs, thresholds)  # looks like: {'/p': 12.3, '/b': None, ...}
         # So by now via t_maxs it is has been determined whether a stutter type is actually present or not
 
@@ -286,16 +318,20 @@ class Destutterer:
 
         return center
     
-    def get_audio_stutter_probs(self, audio_arr):  # I am not done with this, I will finish this later
+    def get_audio_stutter_probs(self, audio_arr):
         '''Given an audio array, returns the stutter probabilities for that audio using the StutterNet model'''
-        # Convert audio array to torch tensor
-        audio_tensor = torch.tensor(audio_arr).float().to(device)
 
         # Process audio through StutterNet model
-        with torch.no_grad():
-            probs = stutter_model(audio_tensor.unsqueeze(0))  # add batch dimension
+        probs = self.stutter_model.infer(audio_arr)  # is_print is by default false
 
-        return probs.squeeze(0).cpu().numpy()  # remove batch dimension and convert to numpy
+        # Make into dictionary
+        probs = {'/p': probs[0],
+                 '/b': probs[1],
+                 '/r': probs[2],
+                 '/wr': probs[3],
+                 '/i': probs[4]}
+
+        return probs  # is like {'/p': 0.7, '/b': 0.2, ...}
 
     def get_max_times_local(self, centers, window_probs, thresholds):
         '''For each stutter label that MATTERS, find the window index with max probability for each label.
