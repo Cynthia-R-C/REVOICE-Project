@@ -59,8 +59,25 @@ destutterer = Destutterer(config_path=CONFIG_PATH,
 size = args.model
 language = args.lan
 asr, online = asr_factory(args)
+
+# Finding the right base for online
+def get_base_online():
+        '''Sets online var to be the correct base based on if VAC is enabled'''
+        # If VAC is enabled, online is a VACOnlineASRProcessor
+        if isinstance(online, VACOnlineASRProcessor):
+            return online.online    # the real OnlineASRProcessor inside
+        else:
+            return online          # plain OnlineASRProcessor
+        
+base_online = get_base_online()
+
 min_chunk = args.min_chunk_size
+
+# ======= Latency Calculations ======= #
 latencies = []    # create list of latencies to track latency of each audio chunk so as to calculate average latency at end
+start_times = {}  # dict of average start time of current text segment
+# key is segment ID (segment start time)
+# value is average perf counter time of receiving the audio chunks
 
 # ======= Set Up TTS ======= #
 # Initialize CoquiTTS with the target model name
@@ -238,12 +255,17 @@ class ServerProcessor:
             self.online_asr_proc.insert_audio_chunk(a)
             o = online.process_iter()   # o[0]: beg, o[1]: end, o[2]: text string
 
+            # Find average start time perf counter and add to global tuple with ID
+            avg_start_time = calc_avg(startTimes)
+            start_times[o[0]] = avg_start_time
+
+
             if o[0] is not None:  # if audio is not blank
 
                 # ============== STT DESTUTTERING LOGIC ================ #
 
-                t_to_buffer = online.buffer_time_offset  # time between global stream start and audio buffer start
-                audio_buffer = online.audio_buffer  # current audio buffer - a list of samples
+                t_to_buffer = base_online.buffer_time_offset  # time between global stream start and audio buffer start
+                audio_buffer = base_online.audio_buffer  # current audio buffer - a list of samples
                 beg_time = o[0]  # beg time of text (global)
                 end_time = o[1]  # end time of text (global)
                 text = o[2]      # text of current segment
@@ -271,10 +293,10 @@ class ServerProcessor:
             try:
                 self.send_result(o)  # sends it to the client and if toggled on to the transcript file and TTS queue
 
-                # Now add latencies of that audio just then to latencies list
-                endTime = time.perf_counter()  # perf_counter is more precise
-                for startTime in startTimes:
-                    latencies.append(endTime - startTime)
+                # # Now add latencies of that audio just then to latencies list  # old latencies calculation code
+                # endTime = time.perf_counter()  # perf_counter is more precise
+                # for startTime in startTimes:
+                #     latencies.append(endTime - startTime)
 
             except BrokenPipeError:
                 logger.info("broken pipe -- connection closed?")
@@ -283,11 +305,12 @@ class ServerProcessor:
 #        o = online.finish()  # this should be working
 #        self.send_result(o)
 
-def calc_avg_latency(latencies):
-    '''Calculates the average latency given a list of latencies'''
-    if len(latencies) == 0:
+def calc_avg(l):
+    '''Calculates the average given a list of floats'''
+    # Used for both latencies and startTimes (adding the avg startTime from startTimes into start_times)
+    if len(l) == 0:
         return 0.0
-    return sum(latencies) / len(latencies)
+    return sum(l) / len(l)
 
 def calc_wer(transcript_path, ref_path):
     '''Returns the WER given the transcript file and the reference file we are comparing it to'''
@@ -377,8 +400,8 @@ class Server:
                     # ============== TTS DESTUTTERING LOGIC ================ #
                     # TTS audio destuttering logic: prolongations & blocks
 
-                    t_to_buffer = online.buffer_time_offset  # time between global stream start and audio buffer start
-                    audio_buffer = online.audio_buffer  # current audio buffer - a list of samples
+                    t_to_buffer = base_online.buffer_time_offset  # time between global stream start and audio buffer start
+                    audio_buffer = base_online.audio_buffer  # current audio buffer - a list of samples
                     beg_time = o[0]  # beg time of text (global)
                     end_time = o[1]  # end time of text (global)
 
@@ -396,6 +419,13 @@ class Server:
 
                     # Convert to 16-bit PCM
                     wav_pcm = (wav * 32767).astype(np.int16)
+
+                    # Record end time for latency
+                    endTime = time.perf_counter() 
+                    # Now add latencies of that audio just then to latencies list
+                    latencies.append(endTime - start_times[o[0]])
+                    # Remove start time for this segment from the start_times dictionary
+                    del start_times[o[0]]
                    
                     # Send the packet of audio data
                     try:
@@ -446,7 +476,7 @@ class Server:
             logger.info(f"WER: {txt_wer:.3f}")
 
         # Latency calculation
-        logger.info(f"Average latency: {calc_avg_latency(latencies):.3f}s")
+        logger.info(f"Average latency: {calc_avg(latencies):.3f}s")
         latencies = []   # clear latencies list for next client session
 
 

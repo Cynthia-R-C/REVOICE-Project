@@ -14,6 +14,9 @@ bin_dir = os.path.abspath('C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\S
 sys.path.append(bin_dir)  # add destutter folder to paths to search
 from infer_sed_single import StutterSED
 
+# Debug prints flag
+DEBUG = True
+
 
 class Destutterer:
     '''Class to handle destuttering using StutterNet model'''
@@ -143,74 +146,6 @@ class Destutterer:
         else:
             return None
 
-
-    # Out of date - kept for reference
-    def destutter(self):
-        '''OUT OF DATE: Main destuttering logic
-        Only for reference - in actual whisper_online_server.py, 
-        destuttering is done in parts based on stt/tts type.
-        Mainly for keeping track of logic'''
-        # So far only updated for STT
-
-        ## Simple: SOUND REP ##
-        self.r_destutter()
-
-        # Sliding 3s window over audio corresponding to text segment
-        hop = 0.05 * self.sr   # could increase this if latency is too high
-        window_size = 3.0 * self.sr  # 3s window; window size in samples
-        loc_start = (self.beg_time - self.t_to_buffer) * self.sr
-        loc_end = (self.end_time - self.t_to_buffer) * self.sr
-
-        window_probs = {'/p': [], '/b': [], '/r': [], '/wr': [], '/i': []}
-        center_ts = []  # local center times of each window (in seconds)
-
-        # Guard: if segment is shorter than window (highly unlikely), throw an error for now, will handle later depending on if this actually happens
-        if loc_end - loc_start <= window_size:
-            raise ValueError(f'Audio segment shorter than window size for destuttering; audio segment len = {loc_end - loc_start}, window size = {window_size}')
-
-        # Getting the stutter probabilities for each window
-        for win_start in range(int(loc_start), int(loc_end - window_size), int(hop)):
-            audio_segment = self.audio_buffer[int(win_start):int(win_start + window_size)]  # get audio segment corresponding to text
-            stutter_probs = self.get_audio_stutter_probs(audio_segment)  # get stutter probabilities for this audio segment
-            # sttuter_probs is like {'/p': 0.7, '/b': 0.2, ...}
-            
-            # Store stutter probabilities for this window
-            for label in window_probs.keys():
-                window_probs[label].append(stutter_probs[label])  # append the prob for this window
-                # window_probs is like {'/p': [p0, p1, ...], '/b': [...], ...}
-
-            # Compute center time of the current window
-            center_t = self.get_center_times_local(win_start, win_start + window_size)
-            center_ts.append(center_t)
-        
-        # Find the times of max probs for each label
-        THRESH_PATH = 'C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\interspeech2024-code\\eval\\thresholds.pt'
-        thresholds = torch.load(THRESH_PATH).to(self.device)  # load computed thresholds
-        t_maxs = self.get_max_times_local(center_ts, window_probs, thresholds)  # looks like: {'/p': 12.3, '/b': None, ...}
-        # So by now via t_maxs it is has been determined whether a stutter type is actually present or not
-
-        ## Medium: WORD REP ##
-
-        # Only run this if word rep detected in model(?) might not be necessary, could just run this without model
-        if t_maxs['/wr'] is not None:
-            self.wr_destutter()
-
-        # Approximate local start/end times for each word in the text segment
-        segment_duration = self.end_time - self.beg_time
-        word_times_local = self.estimate_word_times_local(segment_duration)
-
-        # if any stutter detected, find the corresponding word index(s)
-        stutter_word_idxs = self.get_stutter_times_local(word_times_local, t_maxs)  # looks like: {'/p': 3, '/b': None, ...}
-
-
-        ## Complex: INTERJECTIONS ##
-        self.i_destutter(stutter_word_idxs)
-
-
-        ## Remaning: PROLONGATIONS, BLOCKS ##
-        # To be implemented for TTS later
-
-        return self.text   # will add in audio for this later
     
     def p_destutter(self, audio_arr, t_start, t_end,):
         '''Destutter for /p: shorten the region but keep a small part
@@ -248,6 +183,12 @@ class Destutterer:
         region_short = region[:keep_len]
 
         out = np.concatenate([audio_arr[:start_idx], region_short, audio_arr[end_idx:]])
+
+        # Debug prints
+        if DEBUG:
+            t_start_global, t_end_global = self.seg_local_to_global(t_start, t_end)
+            print(f'p_destutter for t from {t_start_global} to {t_end_global} success')
+
         return out
 
 
@@ -283,6 +224,12 @@ class Destutterer:
 
         # audio_before + short_pause + audio_after
         out = np.concatenate([audio_arr[:start_idx], pause, audio_arr[end_idx:]])
+
+        # Debug prints
+        if DEBUG:
+            t_start_global, t_end_global = self.seg_local_to_global(t_start, t_end)
+            print(f'b_destutter for t from {t_start_global} to {t_end_global} success')
+
         return out
 
     def r_destutter(self):
@@ -292,19 +239,39 @@ class Destutterer:
         pattern = r'\b([a-zA-Z]{1,3})(?:-\1){1,}-([a-zA-Z]+)'
         self.text = re.sub(pattern, r'\2', self.text)
 
+        # Debug prints
+        if DEBUG:
+            print(f'r_destutter for t from {self.beg_time} to {self.end_time} success')
+
     def wr_destutter(self):
         '''Destutter for /wr'''
         # Logic copied over from remove_wr_stutter() in destutter_pseudo.py
         pattern = r'\b([a-zA-Z]+)(?: \1){2,}\b'
         self.text = re.sub(pattern, r'\1', self.text)
 
+        # Debug prints
+        if DEBUG:
+            print(f'wr_destutter for t from {self.beg_time} to {self.end_time} success')
+
     def i_destutter(self, stutter_word_idxs):
         '''Destutter for /i'''
+        # For debug
+        if DEBUG:
+            popped_words = []
+
         # Remove interjection word if it's detected
         if stutter_word_idxs['/i'] is not None:
             idx = stutter_word_idxs['/i']
+
+            if DEBUG:
+                popped_words.append(self.words[idx])
+
             self.words.pop(idx)  # remove the interjection word
             self.text = ' '.join(self.words)
+
+        # Debug prints
+        if DEBUG:
+            print(f'i_destutter for t from {self.beg_time} to {self.end_time} success; popped {popped_words}')            
 
     def get_center_times_local(self, win_start, win_end):
         '''Get local center times (in seconds) for one window
@@ -418,7 +385,7 @@ class Destutterer:
         centers: [c0, c1, ...] where c0, c1 etc. are local center times (s)
         probs:   [p0, p1, ...] matching centers
         thresh: probability threshold
-        Returns (t_start, t_end) in segment-local seconds, or (None, None) if nothing.'''
+        Returns (t_start, t_end) in buffer-local seconds, or (None, None) if nothing.'''
 
         if not centers or not probs:
             return None, None
@@ -467,16 +434,38 @@ class Destutterer:
     def buf_to_seg_local(self, t_start_buf, t_end_buf):
         '''Convert audio-buffer local times (s) to segment-local times (s).
         Buffer-local: time measured from the start of audio_buffer (t_to_buffer).
-        Segment-local: time measured from the start of this text segment (beg_time).
-        '''
+        Segment-local: time measured from the start of this text segment (beg_time).'''
         # Guard in case no prolongation/block detected and thus t_start_buf, t_end_buf = None, None
         if t_start_buf is None or t_end_buf is None:
             return None, None
         
-        # Segement start time in buffer time coords
+        # Segment start time in buffer time coords
         t_to_seg = self.beg_time - self.t_to_buffer  # seconds since buffer start
 
         t_start_seg = t_start_buf - t_to_seg
-        t_end_seg   = t_end_buf   - t_to_seg
+        t_end_seg = t_end_buf - t_to_seg
 
         return t_start_seg, t_end_seg
+    
+    def buf_local_to_global(self, t_start_buf, t_end_buf):
+        '''Convert audio buffer local times to global times for print debugging'''
+        # Guard
+        if t_start_buf is None or t_end_buf is None:
+            return None, None
+        
+        t_start_global = t_start_buf + self.t_to_buffer
+        t_end_global = t_end_buf + self.t_to_buffer
+
+        return t_start_global, t_end_global
+    
+    def seg_local_to_global(self, t_start_seg, t_end_seg):
+        '''Convert text segement local times to global times for print debugging'''
+        # Guard
+        if t_start_seg is None or t_end_seg is None:
+            return None, None
+        
+        t_start_global = t_start_seg + self.beg_time
+        t_end_global = t_end_seg + self.beg_time
+
+        return t_start_global, t_end_global
+
