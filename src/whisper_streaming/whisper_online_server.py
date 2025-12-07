@@ -49,7 +49,13 @@ CMVN_PATH = 'C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025
 # Device agnostic code
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-destutterer = Destutterer(config_path=CONFIG_PATH,
+# Create separate instances to allow for further parallelization and avoid cache thrashing
+destutterer_stt = Destutterer(config_path=CONFIG_PATH,
+                          ckpt_path=CKPT_PATH,
+                          cmvn_path=CMVN_PATH,
+                          sr=SAMPLING_RATE,
+                          device=device)
+destutterer_tts = Destutterer(config_path=CONFIG_PATH,
                           ckpt_path=CKPT_PATH,
                           cmvn_path=CMVN_PATH,
                           sr=SAMPLING_RATE,
@@ -78,6 +84,8 @@ latencies = []    # create list of latencies to track latency of each audio chun
 start_times = {}  # dict of average start time of current text segment
 # key is segment ID (segment start time)
 # value is average perf counter time of receiving the audio chunks
+stt_destut_ls = []
+tts_destut_ls = []
 
 # ======= Set Up TTS ======= #
 # Initialize CoquiTTS with the target model name
@@ -264,28 +272,36 @@ class ServerProcessor:
 
                 # ============== STT DESTUTTERING LOGIC ================ #
 
+                # Track destuttering logic start time
+                t0 = time.perf_counter()
+
                 t_to_buffer = base_online.buffer_time_offset  # time between global stream start and audio buffer start
                 audio_buffer = base_online.audio_buffer  # current audio buffer - a list of samples
                 beg_time = o[0]  # beg time of text (global)
                 end_time = o[1]  # end time of text (global)
                 text = o[2]      # text of current segment
                 
-                t_maxs, stutter_word_idxs = destutterer.get_destutter_info('stt', t_to_buffer, audio_buffer, beg_time, end_time, text)  # get t_maxs and stutter word indices
+                t_maxs, stutter_word_idxs = destutterer_stt.get_destutter_info('stt', t_to_buffer, audio_buffer, beg_time, end_time, text)  # get t_maxs and stutter word indices
                 
                 ## Simple: SOUND REP ##
-                destutterer.r_destutter()
+                destutterer_stt.r_destutter()
 
                 ## Medium: WORD REP ##
                 # Only run this if word rep detected in model(?) might not be necessary, could just run this without model
                 if t_maxs['/wr'] is not None:
-                    destutterer.wr_destutter()
+                    destutterer_stt.wr_destutter()
 
                 ## Complex: INTERJECTIONS ##
-                destutterer.i_destutter(stutter_word_idxs)
+                destutterer_stt.i_destutter(stutter_word_idxs)
 
                 # Update output o with destuttered text
-                new_txt = destutterer.get_text()
+                new_txt = destutterer_stt.get_text()
                 o = (o[0], o[1], new_txt)
+
+                # See how long STT destuttering took
+                t1 = time.perf_counter()
+                logger.info(f"[LATENCY] STT get_destutter_info took {t1 - t0:.3f}s")
+                stt_destut_ls.append(t1 - t0)  # add to list of stt destuttering latencies
 
 
                 # ============== END DESTUTTERING LOGIC ================ #
@@ -398,6 +414,10 @@ class Server:
 
                     
                     # ============== TTS DESTUTTERING LOGIC ================ #
+
+                    # Latency time tracker
+                    t0 = time.perf_counter()
+
                     # TTS audio destuttering logic: prolongations & blocks
 
                     t_to_buffer = base_online.buffer_time_offset  # time between global stream start and audio buffer start
@@ -405,17 +425,21 @@ class Server:
                     beg_time = o[0]  # beg time of text (global)
                     end_time = o[1]  # end time of text (global)
 
-                    p_times, b_times = destutterer.get_destutter_info('tts', t_to_buffer, audio_buffer, beg_time, end_time, text)  # get segment times to cut
+                    p_times, b_times = destutterer_tts.get_destutter_info('tts', t_to_buffer, audio_buffer, beg_time, end_time, text)  # get segment times to cut
 
                     ## PROLONGATION ##
-                    wav = destutterer.p_destutter(wav, p_times[0], p_times[1])
+                    wav = destutterer_tts.p_destutter(wav, p_times[0], p_times[1])
 
                     ## BLOCK ##
-                    wav = destutterer.b_destutter(wav, b_times[0], b_times[1])
+                    wav = destutterer_tts.b_destutter(wav, b_times[0], b_times[1])
 
 
                     # ============== DESTUTTERING LOGIC END ================ #
 
+                    # Print section latency
+                    t1 = time.perf_counter()
+                    logger.info(f'[LATENCY] TTS get_destutter_info took {t1 - t0:.3f}s')
+                    tts_destut_ls.append(t1 - t0)  # add to list of tts destuttering latencies
 
                     # Convert to 16-bit PCM
                     wav_pcm = (wav * 32767).astype(np.int16)
@@ -449,7 +473,11 @@ class Server:
 
     def handle_stt_client(self, client, tts_queue):
         '''Handles one STT client connection'''
-        global latencies   # to fix the local variable referenced before assignment error
+        # to fix the local variable referenced before assignment error
+        global latencies   
+        global stt_destut_ls
+        global tts_destut_ls
+
         client_type = client['type']
         conn = client['conn/socket']
         addr = client['addr']
@@ -477,7 +505,11 @@ class Server:
 
         # Latency calculation
         logger.info(f"Average latency: {calc_avg(latencies):.3f}s")
+        logger.info(f'Average STT destuttering latency: {calc_avg(stt_destut_ls):.3f}s')
+        logger.info(f'Average TTS destuttering latency: {calc_avg(tts_destut_ls):.3f}s')
         latencies = []   # clear latencies list for next client session
+        stt_destut_ls = []  # clear list
+        tts_destut_ls = []  # clear list
 
 
 # Server code

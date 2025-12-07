@@ -43,6 +43,10 @@ class Destutterer:
         # Load class StutterSED
         self.stutter_model = StutterSED(self.config, self.checkpoint, self.cmvn, gpu=0 if self.device=='cuda' else -1)
 
+        # Load thresholds
+        THRESH_PATH = 'C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\interspeech2024-code\\eval\\thresholds.pt'
+        self.thresholds_tensor = torch.load(THRESH_PATH).to(self.device)  # load computed thresholds
+
     def get_text(self):
         '''Returns current text'''
         return self.text
@@ -70,10 +74,20 @@ class Destutterer:
         self.words = text.split() # list of words in text segment
 
         # Sliding 3s window over audio corresponding to text segment
-        hop = 0.05 * self.sr   # could increase this if latency is too high
+        hop = 0.25 * self.sr   # could increase this if latency is too high
         window_size = 3.0 * self.sr  # 3s window; window size in samples
-        loc_start = (self.beg_time - self.t_to_buffer) * self.sr
-        loc_end = (self.end_time - self.t_to_buffer) * self.sr
+        loc_start = (self.beg_time - self.t_to_buffer) * self.sr  # buffer local
+        loc_end = (self.end_time - self.t_to_buffer) * self.sr  # buffer local
+
+        # Guard: if loc_end - loc_start < hop
+        if loc_end - loc_start < hop * self.sr:
+            if client_type == 'stt':
+                # No windows, no stutter detected
+                t_maxs = {'/p': None, '/b': None, '/r': None, '/wr': None, '/i': None}
+                stutter_word_idxs = {}
+                return t_maxs, stutter_word_idxs
+            else:  # tts
+                return ([], []), ([], [])
 
         window_probs = {'/p': [], '/b': [], '/r': [], '/wr': [], '/i': []}
         center_ts = []  # local center times of each window (in seconds)
@@ -94,16 +108,14 @@ class Destutterer:
             center_ts.append(center_t)
         
         # Find the times of max probs for each label
-        THRESH_PATH = 'C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\interspeech2024-code\\eval\\thresholds.pt'
-        thresholds_tensor = torch.load(THRESH_PATH).to(self.device)  # load computed thresholds
 
         # STT: care about /r, /wr, /i
         if client_type == 'stt':   # note to self: can later modify this to only calculate values for needed stt stutter types to reduce latency
 
             # Thresholds for relevant stutter types
-            thresholds = {'/r': thresholds_tensor[2].item(),
-                          '/wr': thresholds_tensor[3].item(),
-                          '/i': thresholds_tensor[4].item() }  # convert to dict for easier access
+            thresholds = {'/r': self.thresholds_tensor[2].item(),
+                          '/wr': self.thresholds_tensor[3].item(),
+                          '/i': self.thresholds_tensor[4].item() }  # convert to dict for easier access
 
             # Get times most likely to be a type of stutter
             t_maxs = self.get_max_times_local(center_ts, window_probs, thresholds)  # looks like: {'/p': 12.3, '/b': None, ...}
@@ -123,8 +135,8 @@ class Destutterer:
             
             # Thresholds for relevant stutter types
             thresholds = {
-                '/p': thresholds_tensor[0].item(),
-                '/b': thresholds_tensor[1].item()  # convert to dict for easier access
+                '/p': self.thresholds_tensor[0].item(),
+                '/b': self.thresholds_tensor[1].item()  # convert to dict for easier access
             }
 
             # Estimate buffer-local regions for /p and /b
@@ -260,7 +272,7 @@ class Destutterer:
             popped_words = []
 
         # Remove interjection word if it's detected
-        if stutter_word_idxs['/i'] is not None:
+        if stutter_word_idxs.get('/i', None) is not None:
             idx = stutter_word_idxs['/i']
 
             if DEBUG:
@@ -287,6 +299,17 @@ class Destutterer:
     
     def get_audio_stutter_probs(self, audio_arr):
         '''Given an audio array, returns the stutter probabilities for that audio using the StutterNet model'''
+
+        # Kaldi fbank needs at least one 25 ms frame
+        # If the slice is too short or empty, just treat it as "no stutter"
+        if audio_arr is None or len(audio_arr) < 0.25*16000:
+            return {
+                '/p': 0.0,
+                '/b': 0.0,
+                '/r': 0.0,
+                '/wr': 0.0,
+                '/i': 0.0,
+            }
 
         # Process audio through StutterNet model
         probs = self.stutter_model.infer(audio_arr)  # is_print is by default false
