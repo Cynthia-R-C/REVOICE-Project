@@ -10,7 +10,7 @@ import json
 # Wr: rec > 75, prec > 10
 # Int: rec > 40, prec > 80
 
-P_BETA = 0.6  # precision
+P_BETA = 0.47  # precision
 B_BETA = 0.36  # precision
 R_BETA = 2.5  # recall
 WR_BETA = 2.5 # recall
