@@ -1,7 +1,6 @@
 # V2
 # Cynthia Chen 10/18/2025
 
-#!/usr/bin/env python3
 # convert_sep28k_to_wenet.py
 # Usage: python convert_sep28k_to_wenet.py; assumes path of relevant CSV files; not applicable to other datasets or paths
 
