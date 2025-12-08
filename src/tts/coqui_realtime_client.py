@@ -28,6 +28,10 @@ buffer_lock = Lock()
 accumulated_bytes = []
 accum_lock = Lock()  # For thread safety
 
+# Saving a final audio file
+GROUP = 'b'
+FINAL_AUDIO_PATH = f'C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\src\\whisper_streaming\\test_results\\{GROUP}\\final_received_audio.wav'
+
 def receive_from_server(sock, data_queue):
     '''Thread to receive audio from server.'''
     while True:
@@ -106,7 +110,7 @@ finally:  # on exit or Ctrl+C
     with accum_lock:
         if accumulated_bytes:
             all_data = b''.join(accumulated_bytes)
-            with sf.SoundFile('final_received_audio.wav', mode='w', samplerate=SAMPLING_RATE, channels=CHANNELS, subtype='PCM_16') as f:
+            with sf.SoundFile(FINAL_AUDIO_PATH, mode='w', samplerate=SAMPLING_RATE, channels=CHANNELS, subtype='PCM_16') as f:
                 f.write(np.frombuffer(all_data, dtype=DTYPE).reshape(-1, CHANNELS))
             print("Saved final received audio to final_received_audio.wav")
     sock.close()

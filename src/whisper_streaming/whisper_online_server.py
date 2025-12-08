@@ -87,6 +87,12 @@ start_times = {}  # dict of average start time of current text segment
 stt_destut_ls = []
 tts_destut_ls = []
 
+# ======= Testing ======= #
+GROUP = 'b'
+# TRIAL = '1'  #  will just have to manually rename the file as I test unless I wanna stop the server and restart it just to update the constant in file naming and that’s not worth it
+TRANSCRIPT_PATH = f'test_results/{GROUP}/transcript.txt'
+
+
 # ======= Set Up TTS ======= #
 # Initialize CoquiTTS with the target model name
 tts = TTS("tts_models/en/ljspeech/fast_pitch").to(device)
@@ -456,8 +462,8 @@ class Server:
                         logger.debug("Sending audio to TTS client...")
                         conn.sendall(wav_pcm.tobytes())
                         logger.debug("Audio sent to TTS client.")
-                    except BrokenPipeError:  # in case something goes wrong with the connection
-                        logger.info("broken pipe -- connection closed?")
+                    except (BrokenPipeError, ConnectionResetError):  # in case something goes wrong with the connection
+                        logger.info("broken pipe / connection reset -- connection closed?")
                         break
             
             # To end the client connection from the terminal press Ctrl+C
@@ -484,7 +490,7 @@ class Server:
         
         out_file = None
         if SAVE_TRANSCRIPT:
-            out_file = open('transcript.txt', 'w')  # open a new file for writing the transcript
+            out_file = open(TRANSCRIPT_PATH, 'w')  # open a new file for writing the transcript
 
         # Now keep waiting for audio from this client and process it
         # No while true loop here, the server processor handles the while true stuff for stt
@@ -500,7 +506,7 @@ class Server:
             # transcription file WER calculation
             out_file.close()
             logger.info('Transcript file written.')
-            txt_wer = calc_wer(reference_file, 'transcript.txt')
+            txt_wer = calc_wer(TRANSCRIPT_PATH, reference_file)
             logger.info(f"WER: {txt_wer:.3f}")
 
         # Latency calculation

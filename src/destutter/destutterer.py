@@ -87,7 +87,7 @@ class Destutterer:
                 stutter_word_idxs = {}
                 return t_maxs, stutter_word_idxs
             else:  # tts
-                return ([], []), ([], [])
+                return (None, None), (None, None)
 
         window_probs = {'/p': [], '/b': [], '/r': [], '/wr': [], '/i': []}
         center_ts = []  # local center times of each window (in seconds)
