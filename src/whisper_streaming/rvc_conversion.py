@@ -10,23 +10,26 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import librosa
+import shutil
 import raudio.transforms as tat
 
 # RVC imports
 rvc_root = os.path.abspath('C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\Retrieval-based-Voice-Conversion-WebUI')
 rvc_lib = os.path.abspath('C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\Retrieval-based-Voice-Conversion-WebUI\\infer\\lib')
 rvc_torchgate = os.path.abspath('C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\Retrieval-based-Voice-Conversion-WebUI\\tools\\torchgate')
+rvc_config = os.path.abspath('C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\Retrieval-based-Voice-Conversion-WebUI\\configs')
 
 # add rvc folder to paths to search
 sys.path.append(rvc_root)  
 sys.path.append(rvc_lib)
 sys.path.append(rvc_torchgate)
+sys.path.append(rvc_config)
 
 from rtrvc import rvc_for_realtime
 from torchgate import TorchGate
 from rtrvc import phase_vocoder
-from rtrvc import printt
-from rtrvc import inp_q, opt_q
+from gui_v1_i18n import I18nAuto
+from config import Config
 
 # Constants
 SAMPLERATE = 16000
@@ -40,43 +43,10 @@ def printt(strr, *args):
         print(strr % args)
 
 
-# Class for Harvest processing algorithm
-class Harvest(multiprocessing.Process):
 
-    # Initializes with input queue inp_q and output queue opt_q
-    def __init__(self, inp_q, opt_q):
-        multiprocessing.Process.__init__(self)
-        self.inp_q = inp_q
-        self.opt_q = opt_q
-
-    # Loops to get data from inp_q and uses pyworld.harvest to extract pitch f0 and times t from x at 16000 Hz sampling rate, puts ts into opt_q if res_f0 has at least n_cpu entries
-    def run(self):
-        import numpy as np
-        import pyworld
-
-        while 1:
-
-            # Get data from inp_q
-            idx, x, res_f0, n_cpu, ts = self.inp_q.get()
-            # ts = timestamp; e.g. float or int, that represents when a specific audio chunk was received or processed
-            # Needed because different chunks of the audio are processed in parallel
-
-            # Extract pitch f- and times t from x at 16000 Hz sr = f0_ceil 1100, f0_floor=50, frame_period=10ms
-            f0, t = pyworld.harvest(
-                x.astype(np.double),
-                fs=16000,
-                f0_ceil=1100,
-                f0_floor=50,
-                frame_period=10,
-            )
-
-            # Stores f0 in res_f0 at idx
-            res_f0[idx] = f0
-            if len(res_f0.keys()) >= n_cpu:  # if all f0s from all cpus are ready
-                self.opt_q.put(ts)
-
+# Main function
 # Main block start
-if __name__ == "__main__":
+def main():
 
     # Imports
     import json  # file handling
@@ -124,7 +94,72 @@ if __name__ == "__main__":
         p.daemon = True
         p.start()
 
+    gui = GUI()  # GUI class instance
 
+    if gui.val_config():  # validate config before starting vc
+
+        printt("cuda_is_available: %s", torch.cuda.is_available())
+
+        gui.start_vc()  # start voice conversion process
+
+
+# Class for Harvest processing algorithm
+class Harvest(multiprocessing.Process):
+
+    # Initializes with input queue inp_q and output queue opt_q
+    def __init__(self, inp_q, opt_q):
+        multiprocessing.Process.__init__(self)
+        self.inp_q = inp_q
+        self.opt_q = opt_q
+
+    # Loops to get data from inp_q and uses pyworld.harvest to extract pitch f0 and times t from x at 16000 Hz sampling rate, puts ts into opt_q if res_f0 has at least n_cpu entries
+    def run(self):
+        import numpy as np
+        import pyworld
+
+        while 1:
+
+            # Get data from inp_q
+            idx, x, res_f0, n_cpu, ts = self.inp_q.get()
+            # ts = timestamp; e.g. float or int, that represents when a specific audio chunk was received or processed
+            # Needed because different chunks of the audio are processed in parallel
+
+            # Extract pitch f- and times t from x at 16000 Hz sr = f0_ceil 1100, f0_floor=50, frame_period=10ms
+            f0, t = pyworld.harvest(
+                x.astype(np.double),
+                fs=16000,
+                f0_ceil=1100,
+                f0_floor=50,
+                frame_period=10,
+            )
+
+            # Stores f0 in res_f0 at idx
+            res_f0[idx] = f0
+            if len(res_f0.keys()) >= n_cpu:  # if all f0s from all cpus are ready
+                self.opt_q.put(ts)
+
+
+# Defines class to hold all user-adjustiable settings as a single object
+# Purpose: centralize config for easy access and updates in the GUI, allowing users to tweak real-time conversion parameters with Harvest or noise handling without hardcoding values 
+class GUIConfig:
+    def __init__(self) -> None:
+        self.pth_path: str = "C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\src\\whisper_streaming\\rvc_voice_models\\xiao-jp.pth"   # hardcoded for now
+        self.index_path: str = "C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\src\\whisper_streaming\\rvc_voice_models\\added_IVF3205_Flat_nprobe_1_xiao-jp_v2.index"  # hardcoded for now
+        self.pitch: int = 0
+        self.formant=0.0
+        self.sr_type: str = "sr_model"
+        self.block_time: float = 0.25  # s
+        self.threhold: int = -60
+        self.crossfade_time: float = 0.05
+        self.extra_time: float = 2.5
+        self.I_noise_reduce: bool = False
+        self.O_noise_reduce: bool = False
+        self.use_pv: bool = False
+        self.rms_mix_rate: float = 0.0
+        self.index_rate: float = 0.0
+        self.n_cpu: int = 4
+        self.f0method: str = "rmvpe"
+        # removed hostapi and device stuff
 
 # Sets up the GUI class as the core controller for the interface
 class GUI:
@@ -133,176 +168,36 @@ class GUI:
         self.config = Config()  # global app config
         self.function = "vc"  # pretrained model loader
         self.delay_time = 0
-        self.hostapis = None
-        self.input_devices = None
-        self.output_devices = None
-        self.input_devices_indices = None
-        self.output_devices_indices = None
-        self.stream = None
-        self.update_devices()
-        self.launcher()
+        # removed audio device and hostapi stuff
 
-    # Config file check and load
-    # Ensure persistent user settings by checking for config.json and copying from configs/config.json if missing and loading the JSON to data
-    # Purpose: load saved configs reliably, translating them into usable flags for the GUI, so that the app remembers user preferences like Harvest as the pitch method without re-entering them each time
-    def load(self):
-        try:
 
-            # Copy if not here
-            if not os.path.exists("configs/inuse/config.json"):
-                shutil.copy("configs/config.json", "configs/inuse/config.json")
-            
-            # Load the configs
-            with open("configs/inuse/config.json", "r") as j:
-                data = json.load(j)
-
-                # translate them to GPU-readable flags
-                data["sr_model"] = data["sr_type"] == "sr_model"
-                data["sr_device"] = data["sr_type"] == "sr_device"
-                data["pm"] = data["f0method"] == "pm"
-                data["harvest"] = data["f0method"] == "harvest"
-                data["crepe"] = data["f0method"] == "crepe"
-                data["rmvpe"] = data["f0method"] == "rmvpe"
-                data["fcpe"] = data["f0method"] == "fcpe"
-
-                # Validates audio device settings from config by updaing devices if sg_hostapi matches available hosapis, restting ot defaults if input/output devices are invalid or if sg_hostapi is not found
-                # Ensures compatible audio hardware setup on startup
-                # Fallback to system defaults prevents crashes during real-time stremaing with Harvest pitch extraciton
-                if data["sg_hostapi"] in self.hostapis:
-                    self.update_devices(hostapi_name=data["sg_hostapi"])
-                    if (
-                        data["sg_input_device"] not in self.input_devices
-                        or data["sg_output_device"] not in self.output_devices
-                    ):
-                        self.update_devices()
-                        data["sg_hostapi"] = self.hostapis[0]
-                        data["sg_input_device"] = self.input_devices[
-                            self.input_devices_indices.index(sd.default.device[0])
-                        ]
-                        data["sg_output_device"] = self.output_devices[
-                            self.output_devices_indices.index(sd.default.device[1])
-                        ]
-                # if hostapi does not match available hostapis
-                else:
-                    data["sg_hostapi"] = self.hostapis[0]
-                    data["sg_input_device"] = self.input_devices[
-                        self.input_devices_indices.index(sd.default.device[0])
-                    ]
-                    data["sg_output_device"] = self.output_devices[
-                        self.output_devices_indices.index(sd.default.device[1])
-                    ]
-        # In case of error, create default data dict with empty model paths, default audio devices, etc.
-        # Create safe fallback for corrupted or missing configs, ensuring GUI starts with workable defaults for real-time Harvest-based voice conversion w/o user intervention
-        except:
-            with open("configs/inuse/config.json", "w") as j:
-                data = {
-                    "pth_path": "",
-                    "index_path": "",
-                    "sg_hostapi": self.hostapis[0],
-                    "sg_wasapi_exclusive": False,
-                    "sg_input_device": self.input_devices[
-                        self.input_devices_indices.index(sd.default.device[0])
-                    ],
-                    "sg_output_device": self.output_devices[
-                        self.output_devices_indices.index(sd.default.device[1])
-                    ],
-                    "sr_type": "sr_model",
-                    "threhold": -60,
-                    "pitch": 0,
-                    "formant": 0.0,
-                    "index_rate": 0,
-                    "rms_mix_rate": 0,
-                    "block_time": 0.25,
-                    "crossfade_length": 0.05,
-                    "extra_time": 2.5,
-                    "n_cpu": 4,
-                    "f0method": "rmvpe",
-                    "use_jit": False,
-                    "use_pv": False,
-                }
-                data["sr_model"] = data["sr_type"] == "sr_model"
-                data["sr_device"] = data["sr_type"] == "sr_device"
-                data["pm"] = data["f0method"] == "pm"
-                data["harvest"] = data["f0method"] == "harvest"
-                data["crepe"] = data["f0method"] == "crepe"
-                data["rmvpe"] = data["f0method"] == "rmvpe"
-                data["fcpe"] = data["f0method"] == "fcpe"
-        return data
-    
-    # This configures the audio devices for streaming, Its purpose is to set the mic and speaker for real-time audio flow.
-    def set_devices(self, input_device, output_device):
-        """设置输出设备"""
-        sd.default.device[0] = self.input_devices_indices[
-            self.input_devices.index(input_device)
-        ]
-        sd.default.device[1] = self.output_devices_indices[
-            self.output_devices.index(output_device)
-        ]
-        printt("Input device: %s:%s", str(sd.default.device[0]), input_device)
-        printt("Output device: %s:%s", str(sd.default.device[1]), output_device)
-
-    # Validates if certain files are OK before starting a stream, called above in a conditional
-    def set_values(self, values):
+    # Validates if certain files are OK before starting vc
+    # modified from set_values
+    def val_config(self) -> bool:
 
         # if missing .pth file
-        if len(values["pth_path"].strip()) == 0:  
-            sg.popup(i18n("请选择pth文件"))
+        if len(self.gui_config.pth_path.strip()) == 0:  
+            print(i18n("请选择pth文件"))
             return False
         
         # if missing index file
-        if len(values["index_path"].strip()) == 0:
-            sg.popup(i18n("请选择index文件"))
+        if len(self.gui_config.index_path.strip()) == 0:
+            print(i18n("请选择index文件"))
             return False
         
         # if the pth file path contains non-ASCII values like Chinese
         pattern = re.compile("[^\x00-\x7F]+")
-        if pattern.findall(values["pth_path"]):
-            sg.popup(i18n("pth文件路径不可包含中文"))  # oh this is actually funny lol because since this was made in China probably a lot of people would make this error
+        if pattern.findall(self.gui_config.pth_path):
+            print(i18n("pth文件路径不可包含中文"))  # oh this is actually funny lol because since this was made in China probably a lot of people would make this error
             return False
         
         # if index file path contains Chinese
-        if pattern.findall(values["index_path"]):
-            sg.popup(i18n("index文件路径不可包含中文"))
+        if pattern.findall(self.gui_config.index_path):
+            print(i18n("index文件路径不可包含中文"))
             return False
         
-        # Device and config setup
-        # Purpose: update GUIConfig object with user inputs and set audio devices, preparing the system for voice conversion with Harvest or other pitch methods
-        self.set_devices(values["sg_input_device"], values["sg_output_device"])
-        self.config.use_jit = False  # values["use_jit"]
-        # self.device_latency = values["device_latency"]
-        self.gui_config.sg_hostapi = values["sg_hostapi"]
-        self.gui_config.sg_wasapi_exclusive = values["sg_wasapi_exclusive"]
-        self.gui_config.sg_input_device = values["sg_input_device"]
-        self.gui_config.sg_output_device = values["sg_output_device"]
-        self.gui_config.pth_path = values["pth_path"]
-        self.gui_config.index_path = values["index_path"]
-        self.gui_config.sr_type = ["sr_model", "sr_device"][
-            [
-                values["sr_model"],
-                values["sr_device"],
-            ].index(True)
-        ]
-        self.gui_config.threhold = values["threhold"]
-        self.gui_config.pitch = values["pitch"]
-        self.gui_config.formant = values["formant"]
-        self.gui_config.block_time = values["block_time"]
-        self.gui_config.crossfade_time = values["crossfade_length"]
-        self.gui_config.extra_time = values["extra_time"]
-        self.gui_config.I_noise_reduce = values["I_noise_reduce"]
-        self.gui_config.O_noise_reduce = values["O_noise_reduce"]
-        self.gui_config.use_pv = values["use_pv"]
-        self.gui_config.rms_mix_rate = values["rms_mix_rate"]
-        self.gui_config.index_rate = values["index_rate"]
-        self.gui_config.n_cpu = values["n_cpu"]
-        self.gui_config.f0method = ["pm", "harvest", "crepe", "rmvpe", "fcpe"][
-            [
-                values["pm"],
-                values["harvest"],
-                values["crepe"],
-                values["rmvpe"],
-                values["fcpe"],
-            ].index(True)
-        ]
+        # deleted all the setting gui config vals based on GUI code
+
         return True
         
 
@@ -448,8 +343,6 @@ class GUI:
             sr=self.gui_config.samplerate, n_fft=4 * self.zc, prop_decrease=0.9
         ).to(self.config.device)  # initialize noise gate with set parameters e.g. FFT
 
-        # Start the stream
-        self.start_stream()
 
     # Begins processing each audio chunk in real time; purpose is to start audio callback, track processing time, and convert input to mono fo rconsistent handling in Harvest pitch extraction
     def audio_callback(
@@ -671,7 +564,10 @@ class GUI:
             .cpu()
             .numpy()
         )
+
         total_time = time.perf_counter() - start_time
         if flag_vc:
             self.window["infer_time"].update(int(total_time * 1000))
         printt("Infer time: %.2f", total_time)
+
+        return outdata

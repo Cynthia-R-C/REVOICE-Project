@@ -8,7 +8,7 @@ import sys
 
 # Audio settings (must match server's expectations: 16kHz, mono, 16-bit signed integer)
 RATE = 16000
-CHUNK_SIZE = 1024  # Adjust if needed for smoother streaming
+CHUNK_SIZE = 4000  # Adjusted from 1024 to 4000 for RVC compatibility
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 
