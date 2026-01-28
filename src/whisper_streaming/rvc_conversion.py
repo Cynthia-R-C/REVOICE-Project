@@ -1,5 +1,4 @@
-# Taken from RVC gui_v1.py
-# Modified code to customize for my pipeline
+# Modified from RVC gui_v1.py
 # Created 1/21/2026 (Cynthia Chen)
 
 # Imports
@@ -92,33 +91,51 @@ class RVC:
         # Limit n_cpu to the smaller of system's cpu count or 8 to avoid overwhelming resources
         n_cpu = min(cpu_count(), 8)
 
-
-        # When GUI initializes it needs relative paths to get Config()
-        # So we do this finnicky thing again (same as with i18n)
-
-        # 1. Save current location (whisper_streaming)
+        # Save current location (whisper_streaming)
         current_dir = os.getcwd()
 
-        # 2. Jump to the RVC root so it can find configs/v1/32k.json
-        os.chdir(rvc_root)
-        
+
+        # ======== Self GUI Initialization ======= #
+
+        # When RVC initializes GUI the Config() part of GUI intialization automatically tries to look at command line arguments
+        # However I'm calling this with a server command line, so Config() throws a wrong argument error
+        # Thus, this is a shield to essentially clear the command line arguments temporarily while GUI() runs
+
+        # Also when GUI initializes it needs relative paths to get Config()
+        # So we do this finnicky thing again (same as with i18n)
+
+        # Tell Python there are NO command-line arguments
+        # Prevents RVC's Config() from seeing --language, --vac, etc.
+        actual_argv = sys.argv  # save original command line arguments
+        sys.argv = [sys.argv[0]] 
+
         try:
-            # 3. This call triggers GUI() -> Config(), which needs the right folder
+            # Jump to the RVC root so it can find configs/v1/32k.json
+            os.chdir(rvc_root)
+            
+            # Initialize i18n (avoid Windows infinite process spawning)
+            self.i18n = I18nAuto()
+            
+            # Initialize GUI/Config
+            # This call triggers GUI() -> Config(), which needs the right folder AND right arguments
             self.gui = GUI()  
+
+            # Launches that many Harvest processes as daemons (background workers that exit with the main program)
+            if self.gui.gui_config.f0method == "harvest" and self.gui.gui_config.n_cpu > 1:
+                for _ in range(n_cpu):
+                    p = Harvest(self.inp_q, self.opt_q)
+                    p.daemon = True
+                    p.start()
+
+            self.gui.setup_vc(self.inp_q, self.opt_q)  # setup vc
+            
         finally:
-            # 4. Jump back so program doesn't get lost
+            # Restore everything so program can keep working
+            sys.argv = actual_argv
             os.chdir(current_dir)
         
 
-        # Launches that many Harvest processes as daemons (background workers that exit with the main program)
-        if self.gui.gui_config.f0method == "harvest" and self.gui.gui_config.n_cpu > 1:
-            for _ in range(n_cpu):
-                p = Harvest(self.inp_q, self.opt_q)
-                p.daemon = True
-                p.start()
-
         self.fifo = np.zeros((0,CHANNELS), dtype=np.float32)  # FIFO buffer for audio chunks
-        self.gui.setup_vc(self.inp_q, self.opt_q)  # setup vc
 
     def vc(self, audio_data: np.ndarray) -> np.ndarray:
         '''Runs RVC on given audio_data numpy array and returns converted audio as numpy array

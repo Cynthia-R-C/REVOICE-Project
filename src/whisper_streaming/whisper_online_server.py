@@ -151,9 +151,6 @@ def main():
     logger.info("Server stopping...")
     sys.exit(0)
 
-if __name__ == '__main__':
-    main()
-
 
 ######### Server objects
 
@@ -560,6 +557,14 @@ class Server:
         latencies = []   # clear latencies list for next client session
         stt_destut_ls = []  # clear list
         tts_destut_ls = []  # clear list
+
+
+
+
+
+# ========= Main server code ======= #
+if __name__ == '__main__':
+    main()
 
 
 # # Server code
