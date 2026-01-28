@@ -32,24 +32,33 @@ import torchaudio.transforms as tat
 # RVC imports
 rvc_root = os.path.abspath('C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\Retrieval-based-Voice-Conversion-WebUI')
 rvc_lib = os.path.abspath('C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\Retrieval-based-Voice-Conversion-WebUI\\infer\\lib')
-rvc_torchgate = os.path.abspath('C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\Retrieval-based-Voice-Conversion-WebUI\\tools\\torchgate')
+rvc_tools = os.path.abspath('C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\Retrieval-based-Voice-Conversion-WebUI\\tools')
 rvc_config = os.path.abspath('C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\Retrieval-based-Voice-Conversion-WebUI\\configs')
 rvc_i18n = os.path.abspath('C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\Retrieval-based-Voice-Conversion-WebUI\\i18n')
 
 # add rvc folder to paths to search
 sys.path.append(rvc_root)  
 sys.path.append(rvc_lib)
-sys.path.append(rvc_torchgate)
+sys.path.append(rvc_tools)
 sys.path.append(rvc_config)
 sys.path.append(rvc_i18n)
 
-from rtrvc import rvc_for_realtime # core voice conversion logic
-from torchgate import TorchGate # noise reduction
-from rtrvc import phase_vocoder
+import rtrvc as rvc_for_realtime # core voice conversion logic
+from torchgate.torchgate import TorchGate # noise reduction
 from config import Config  # settings
 from i18n import I18nAuto  # translation
 
-i18n = I18nAuto()
+# So the i18n uses local relative paths to check for files in the package so gotta do this finnicky thing below
+# 1. Save current location (whisper_streaming)
+current_dir = os.getcwd()
+# 2. Jump into the RVC folder so i18n can find its files
+os.chdir(rvc_root)
+# 3. Initialize the translator
+try:
+    i18n = I18nAuto()
+finally:
+    # 4. Jump BACK to whisper_streaming folder so the rest of program works
+    os.chdir(current_dir)
 
 # Constants
 SAMPLERATE = 16000
@@ -75,7 +84,6 @@ class RVC:
         #     if torch.cuda.is_available()
         #     else ("mps" if torch.backends.mps.is_available() else "cpu")
         # )
-        current_dir = os.getcwd()
 
         # Create input and output queue to share data between processes
         self.inp_q = Queue()
@@ -84,7 +92,23 @@ class RVC:
         # Limit n_cpu to the smaller of system's cpu count or 8 to avoid overwhelming resources
         n_cpu = min(cpu_count(), 8)
 
-        self.gui = GUI()  # GUI class instance
+
+        # When GUI initializes it needs relative paths to get Config()
+        # So we do this finnicky thing again (same as with i18n)
+
+        # 1. Save current location (whisper_streaming)
+        current_dir = os.getcwd()
+
+        # 2. Jump to the RVC root so it can find configs/v1/32k.json
+        os.chdir(rvc_root)
+        
+        try:
+            # 3. This call triggers GUI() -> Config(), which needs the right folder
+            self.gui = GUI()  
+        finally:
+            # 4. Jump back so program doesn't get lost
+            os.chdir(current_dir)
+        
 
         # Launches that many Harvest processes as daemons (background workers that exit with the main program)
         if self.gui.gui_config.f0method == "harvest" and self.gui.gui_config.n_cpu > 1:
@@ -137,6 +161,36 @@ class RVC:
         else:
             raise ValueError('RVC processing failed due to invalid configs.')
 
+
+# Blends two audio signals a and b using fade_out and fade_in windows by computing their FFT with torch.fft.rfft, adjusting magnitudes with absab scaling (doubling middle elements based on even or odd length n), calculating phase differences deltaphase adjusted to be within -pi to pi, creating frequency weights w, time steps t, and combining the signals with cosine reconstruction for smooth phase blending
+def phase_vocoder(a, b, fade_out, fade_in):
+    window = torch.sqrt(fade_out * fade_in)
+    fa = torch.fft.rfft(a * window)
+    fb = torch.fft.rfft(b * window)
+    absab = torch.abs(fa) + torch.abs(fb)
+
+    # Depending on odd or even length n
+    n = a.shape[0]
+    if n % 2 == 0:
+        absab[1:-1] *= 2
+    else:
+        absab[1:] *= 2
+
+    # Calculating phase differences deltaphase
+    phia = torch.angle(fa)
+    phib = torch.angle(fb)
+    deltaphase = phib - phia
+    deltaphase = deltaphase - 2 * np.pi * torch.floor(deltaphase / 2 / np.pi + 0.5)
+    w = 2 * np.pi * torch.arange(n // 2 + 1).to(a) + deltaphase
+    t = torch.arange(n).unsqueeze(-1).to(a) / n
+
+    # Combine signals with cosine reconstruction for smooth phase blending
+    result = (
+        a * (fade_out**2)
+        + b * (fade_in**2)
+        + torch.sum(absab * torch.cos(w * t + phia), -1) * window / n
+    )
+    return result
 
 # Class for Harvest processing algorithm
 class Harvest(multiprocessing.Process):
