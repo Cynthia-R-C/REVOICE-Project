@@ -92,7 +92,6 @@ GROUP = 'b'
 # TRIAL = '1'  #  will just have to manually rename the file as I test unless I wanna stop the server and restart it just to update the constant in file naming and that’s not worth it
 TRANSCRIPT_PATH = f'test_results/{GROUP}/transcript.txt'
 
-
 # ======= Set Up TTS ======= #
 # Initialize CoquiTTS with the target model name
 tts = TTS("tts_models/en/ljspeech/fast_pitch").to(device)
@@ -100,9 +99,14 @@ tts = TTS("tts_models/en/ljspeech/fast_pitch").to(device)
 # TTS Constants
 TTS_SR = tts.synthesizer.output_sample_rate  # TTS sampling rate
 
+# ======= Set Up RVC ======= #
+from rvc_conversion import RVC
+rvc_converter = RVC()   # initialize once; latency-optimized
+
 # ======= Other Toggles ======= #
 SAVE_TRANSCRIPT = True
 tts_flag = False  # becomes true when a TTS client connects to the server
+rvc_flag = True   # choose whether to enable RVC or not
 
 
 
@@ -446,6 +450,21 @@ class Server:
                     t1 = time.perf_counter()
                     logger.info(f'[LATENCY] TTS get_destutter_info took {t1 - t0:.3f}s')
                     tts_destut_ls.append(t1 - t0)  # add to list of tts destuttering latencies
+
+                    # RVC logic (if flag enabled)
+                    if rvc_flag:
+                        # Pass through RVC conversion
+                        logger.debug("[RVC] Passing TTS audio through RVC...")
+                        new_aud = rvc_converter.vc(wav)  # outputs 2D array, need to squeeze to 1D
+                        
+                        # In case RVC returns empty because the audio < block frames and is too short (non-ideal), preserve original speech
+                        if new_aud.shape[0] == 0:
+                            logger.warning("[RVC] RVC returned empty audio, preserving original TTS audio.")
+                            # don't do anything
+                        else:
+                            wav = new_aud.squeeze(axis=1)  # squeeze to 1D
+                            
+                        logger.debug("[RVC] TTS audio processed through RVC.")
 
                     # Convert to 16-bit PCM
                     wav_pcm = (wav * 32767).astype(np.int16)

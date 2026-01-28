@@ -11,25 +11,45 @@ import torch
 import torch.nn.functional as F
 import librosa
 import shutil
-import raudio.transforms as tat
+import torchaudio.transforms as tat
+
+# Imports pt 2 (originally from name == __main__ block in gui_v1.py)
+import json  # file handling
+import multiprocessing
+import re  # error tracking
+import threading
+import time
+import traceback  # error tracking
+from multiprocessing import Queue, cpu_count
+from queue import Empty  # queues
+
+import librosa  # signal processing
+import numpy as np
+import torch
+import torch.nn.functional as F
+import torchaudio.transforms as tat
 
 # RVC imports
 rvc_root = os.path.abspath('C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\Retrieval-based-Voice-Conversion-WebUI')
 rvc_lib = os.path.abspath('C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\Retrieval-based-Voice-Conversion-WebUI\\infer\\lib')
 rvc_torchgate = os.path.abspath('C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\Retrieval-based-Voice-Conversion-WebUI\\tools\\torchgate')
 rvc_config = os.path.abspath('C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\Retrieval-based-Voice-Conversion-WebUI\\configs')
+rvc_i18n = os.path.abspath('C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\Retrieval-based-Voice-Conversion-WebUI\\i18n')
 
 # add rvc folder to paths to search
 sys.path.append(rvc_root)  
 sys.path.append(rvc_lib)
 sys.path.append(rvc_torchgate)
 sys.path.append(rvc_config)
+sys.path.append(rvc_i18n)
 
-from rtrvc import rvc_for_realtime
-from torchgate import TorchGate
+from rtrvc import rvc_for_realtime # core voice conversion logic
+from torchgate import TorchGate # noise reduction
 from rtrvc import phase_vocoder
-from gui_v1_i18n import I18nAuto
-from config import Config
+from config import Config  # settings
+from i18n import I18nAuto  # translation
+
+i18n = I18nAuto()
 
 # Constants
 SAMPLERATE = 16000
@@ -44,63 +64,78 @@ def printt(strr, *args):
 
 
 
-# Main function
-# Main block start
-def main():
+# RVC wrapper class
+class RVC:
 
-    # Imports
-    import json  # file handling
-    import multiprocessing
-    import re  # error tracking
-    import threading
-    import time
-    import traceback  # error tracking
-    from multiprocessing import Queue, cpu_count
-    from queue import Empty  # queues
+    def __init__(self):
 
-    import librosa  # signal processing
-    from tools.torchgate import TorchGate  # noise reduction
-    import numpy as np
-    import FreeSimpleGUI as sg  # for GUI interface
-    import sounddevice as sd  # audio streaming
-    import torch
-    import torch.nn.functional as F
-    import torchaudio.transforms as tat
+        # device = rvc_for_realtime.config.device
+        # device = torch.device(
+        #     "cuda"
+        #     if torch.cuda.is_available()
+        #     else ("mps" if torch.backends.mps.is_available() else "cpu")
+        # )
+        current_dir = os.getcwd()
 
-    from infer.lib import rtrvc as rvc_for_realtime  # core voice conversion logic
-    from i18n.i18n import I18nAuto  # translation
-    from configs.config import Config  # settings
+        # Create input and output queue to share data between processes
+        self.inp_q = Queue()
+        self.opt_q = Queue()
 
-    i18n = I18nAuto()
+        # Limit n_cpu to the smaller of system's cpu count or 8 to avoid overwhelming resources
+        n_cpu = min(cpu_count(), 8)
 
-    # device = rvc_for_realtime.config.device
-    # device = torch.device(
-    #     "cuda"
-    #     if torch.cuda.is_available()
-    #     else ("mps" if torch.backends.mps.is_available() else "cpu")
-    # )
-    current_dir = os.getcwd()
+        self.gui = GUI()  # GUI class instance
 
-    # Create input and output queue to share data between processes
-    inp_q = Queue()
-    opt_q = Queue()
+        # Launches that many Harvest processes as daemons (background workers that exit with the main program)
+        if self.gui.gui_config.f0method == "harvest" and self.gui.gui_config.n_cpu > 1:
+            for _ in range(n_cpu):
+                p = Harvest(self.inp_q, self.opt_q)
+                p.daemon = True
+                p.start()
 
-    # Limit n_cpu to the smaller of system's cpu count or 8 to avoid overwhelming resources
-    n_cpu = min(cpu_count(), 8)
+        self.fifo = np.zeros((0,CHANNELS), dtype=np.float32)  # FIFO buffer for audio chunks
+        self.gui.setup_vc(self.inp_q, self.opt_q)  # setup vc
 
-    # Launches that many Harvest processes as daemons (background workers that exit with the main program)
-    for _ in range(n_cpu):
-        p = Harvest(inp_q, opt_q)
-        p.daemon = True
-        p.start()
+    def vc(self, audio_data: np.ndarray) -> np.ndarray:
+        '''Runs RVC on given audio_data numpy array and returns converted audio as numpy array
+        audio_data: 2D numpy array (mono) float32; shape = (block_frame, 1)'''
 
-    gui = GUI()  # GUI class instance
+        # Check for empty array
+        if audio_data is None:
+            return np.zeros((0,CHANNELS), dtype=np.float32)
 
-    if gui.val_config():  # validate config before starting vc
+        if self.gui.val_config():  # validate config before starting vc
 
-        printt("cuda_is_available: %s", torch.cuda.is_available())
+            printt("cuda_is_available: %s", torch.cuda.is_available())
+            
+            aud = np.asarray(audio_data, dtype=np.float32)  # ensure float32 numpy array
 
-        gui.start_vc()  # start voice conversion process
+            # Ensure has right shape before concatenating with buffer, i.e. 2D array
+            if len(aud.shape) == 1:
+                aud = np.expand_dims(aud, axis=1)  # make into 2D array with shape (n,1)
+            elif len(aud.shape) == 2 and aud.shape[1] != CHANNELS:
+                raise ValueError(f'Input audio_data has invalid number of channels; audio_data has shape {audio_data.shape}, expected {CHANNELS} channels.')
+
+            # FIFO buffer
+            self.fifo = np.concatenate([self.fifo, aud], axis=0)  # add audio to FIFO buffer
+
+            out_chunks = []  # empty array
+            bf = self.gui.block_frame
+
+            # Split into RVC-processable chunks
+            while self.fifo.shape[0] >= bf:
+                chunk = self.fifo[:bf]  # add to chunk
+                self.fifo = self.fifo[bf:]  # remove from buffer
+                out_chunks.append(self.gui.process_chunk(chunk)) # append processed chunk
+
+            if not out_chunks:  # if ends up empty
+                return np.zeros((0,CHANNELS), dtype=np.float32)
+
+            # Return full audio array - combine all chunks into one array of audio
+            return np.concatenate(out_chunks, axis=0)
+        
+        else:
+            raise ValueError('RVC processing failed due to invalid configs.')
 
 
 # Class for Harvest processing algorithm
@@ -201,8 +236,8 @@ class GUI:
         return True
         
 
-    # Method for starting voice conversion
-    def start_vc(self):
+    # Method for setting up voice conversion (taken from start_vc in gui_v1.py)
+    def setup_vc(self, inp_q, opt_q) -> None:
 
         # Initialze voice conversion engine
         torch.cuda.empty_cache()  # free unused GPU memory, preventing crashes
@@ -345,19 +380,18 @@ class GUI:
 
 
     # Begins processing each audio chunk in real time; purpose is to start audio callback, track processing time, and convert input to mono fo rconsistent handling in Harvest pitch extraction
-    def audio_callback(
-        self, indata: np.ndarray, outdata: np.ndarray, frames, times, status
-    ):
-        """
-        音频处理
-        """
-        global flag_vc
+    def process_chunk(self, indata: np.ndarray) -> np.ndarray:
+        '''New version of audio_callback() from gui_v1.py.
+        indata = mono float32 np audio array with chunk size self.block_frame samples; shape with dim 2 = (block_frame, 1)
+        outdata = same datatype and shape as indata'''
 
         # record start time
         start_time = time.perf_counter()
 
         # convert input audio from stereo to mono
-        indata = librosa.to_mono(indata.T)
+        # How shape goes in this method: downmix to mono for processing, then reexpand to 2D array for output (still only mono audio though)
+        if indata.ndim == 2:
+            indata = librosa.to_mono(indata.T)  # convert to mono
         # indata = mic input chunk
 
         # Silences quiet audio segments to reduce noise; purpose is to gate low-volume input based on the user's threshold, improving clarity before Harvest pitch processing
@@ -451,7 +485,7 @@ class GUI:
         # if in voice conversion mode
         if self.function == "vc":
             # call rvc.infer to generate the right audio
-            infer_wav = self.rvc.inwifer(
+            infer_wav = self.rvc.infer(
                 self.input_wav_res,
                 self.block_frame_16k,
                 self.skip_head,
@@ -557,7 +591,7 @@ class GUI:
         # Output and time calculation
         # Converts infer_wav to NumPy, repeats for channels, and sets outdata; calculates and displays inference time if voice channel flag is on
         # Delivers final audio and displays latency, helping users optimize Harvest settings
-        outdata[:] = (
+        outdata = (
             infer_wav[: self.block_frame]
             .repeat(self.gui_config.channels, 1)
             .t()
@@ -566,8 +600,6 @@ class GUI:
         )
 
         total_time = time.perf_counter() - start_time
-        if flag_vc:
-            self.window["infer_time"].update(int(total_time * 1000))
         printt("Infer time: %.2f", total_time)
 
         return outdata
