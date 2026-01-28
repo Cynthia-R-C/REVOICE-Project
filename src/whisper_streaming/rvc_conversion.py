@@ -47,6 +47,9 @@ from torchgate.torchgate import TorchGate # noise reduction
 from config import Config  # settings
 from i18n import I18nAuto  # translation
 
+# Flags
+DEBUG = True
+
 # So the i18n uses local relative paths to check for files in the package so gotta do this finnicky thing below
 # 1. Save current location (whisper_streaming)
 current_dir = os.getcwd()
@@ -140,6 +143,13 @@ class RVC:
     def vc(self, audio_data: np.ndarray) -> np.ndarray:
         '''Runs RVC on given audio_data numpy array and returns converted audio as numpy array
         audio_data: 2D numpy array (mono) float32; shape = (block_frame, 1)'''
+
+        # Debug statements
+        if DEBUG:
+            print(f'[RVC DEBUG] Input audio shape: {audio_data.shape}')
+            print(f'[RVC DEBUG] FIFO buffer size: {self.fifo.shape[0]} samples')
+            print(f'[RVC DEBUG] Block frame required: {self.gui.block_frame} samples')
+            print(f'[RVC DEBUG] Can process: {self.fifo.shape[0] >= self.gui.block_frame}')
 
         # Check for empty array
         if audio_data is None:
@@ -251,10 +261,10 @@ class GUIConfig:
     def __init__(self) -> None:
         self.pth_path: str = "C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\src\\whisper_streaming\\rvc_voice_models\\xiao-jp.pth"   # hardcoded for now
         self.index_path: str = "C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\src\\whisper_streaming\\rvc_voice_models\\added_IVF3205_Flat_nprobe_1_xiao-jp_v2.index"  # hardcoded for now
-        self.pitch: int = 0
+        self.pitch: int = -9
         self.formant=0.0
         self.sr_type: str = "sr_model"
-        self.block_time: float = 0.25  # s
+        self.block_time: float = 0.5  # s
         self.threhold: int = -60
         self.crossfade_time: float = 0.05
         self.extra_time: float = 2.5
@@ -264,7 +274,7 @@ class GUIConfig:
         self.rms_mix_rate: float = 0.0
         self.index_rate: float = 0.0
         self.n_cpu: int = 4
-        self.f0method: str = "rmvpe"
+        self.f0method: str = "pm"
         # removed hostapi and device stuff
 
 # Sets up the GUI class as the core controller for the interface
@@ -555,6 +565,9 @@ class GUI:
 
         # if in voice conversion mode
         if self.function == "vc":
+            if DEBUG:
+                print('[RVC DEBUG] Calling RVC.infer() for voice conversion')
+                t0 = time.perf_counter()
             # call rvc.infer to generate the right audio
             infer_wav = self.rvc.infer(
                 self.input_wav_res,
@@ -563,6 +576,9 @@ class GUI:
                 self.return_length,
                 self.gui_config.f0method,
             )
+            if DEBUG:
+                t1 = time.perf_counter()
+                print(f'[RVC DEBUG] RVC.infer() took {t1 - t0:.3f} seconds')
 
             # If needed upsample with resampler2
             if self.resampler2 is not None:

@@ -57,6 +57,7 @@ start_times = {}  # dict of average start time of current text segment
 # value is average perf counter time of receiving the audio chunks
 stt_destut_ls = []
 tts_destut_ls = []
+rvc_ls = []
 
 # ======= Testing ======= #
 GROUP = 'b'
@@ -474,19 +475,29 @@ class Server:
                     tts_destut_ls.append(t1 - t0)  # add to list of tts destuttering latencies
 
                     # RVC logic (if flag enabled)
+                    tr0 = time.perf_counter()
                     if rvc_flag:
-                        # Pass through RVC conversion
-                        logger.debug("[RVC] Passing TTS audio through RVC...")
-                        new_aud = rvc_converter.vc(wav)  # outputs 2D array, need to squeeze to 1D
-                        
-                        # In case RVC returns empty because the audio < block frames and is too short (non-ideal), preserve original speech
-                        if new_aud.shape[0] == 0:
-                            logger.warning("[RVC] RVC returned empty audio, preserving original TTS audio.")
-                            # don't do anything
-                        else:
-                            wav = new_aud.squeeze(axis=1)  # squeeze to 1D
+
+                        # Only use RVC if audio is long enough to be meaningful
+                        min_samples = 2000  # ~0.125s at 16kHz
+                        if wav.shape[0] >= min_samples:
+                            # Pass through RVC conversion
+                            logger.debug("[RVC] Passing TTS audio through RVC...")
+                            new_aud = rvc_converter.vc(wav)  # outputs 2D array, need to squeeze to 1D
                             
-                        logger.debug("[RVC] TTS audio processed through RVC.")
+                            if new_aud.shape[0] == 0:
+                                # In case RVC returns empty because the audio < block frames and is too short (non-ideal), preserve original speech
+                                logger.warning("[RVC] RVC returned empty, preserving original.")
+                            else:
+                                wav = new_aud.squeeze(axis=1)  # squeeze to 1D
+                                logger.debug("[RVC] TTS audio processed through RVC.")
+                        else:
+                            logger.debug(f"[RVC] Skipping RVC for short audio ({wav.shape[0]} samples)")
+                            
+                    
+                    tr1 = time.perf_counter()
+                    logger.info(f'[LATENCY] RVC processing took {tr1 - tr0:.3f}s')
+                    rvc_ls.append(tr1 - tr0)  # add to RVC latency list
 
                     # Convert to 16-bit PCM
                     wav_pcm = (wav * 32767).astype(np.int16)
@@ -554,6 +565,7 @@ class Server:
         logger.info(f"Average latency: {calc_avg(latencies):.3f}s")
         logger.info(f'Average STT destuttering latency: {calc_avg(stt_destut_ls):.3f}s')
         logger.info(f'Average TTS destuttering latency: {calc_avg(tts_destut_ls):.3f}s')
+        logger.info(f'Average RVC latency: {calc_avg(rvc_ls):.3f}s')
         latencies = []   # clear latencies list for next client session
         stt_destut_ls = []  # clear list
         tts_destut_ls = []  # clear list
