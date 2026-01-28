@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 from whisper_online import *  #
+import line_packet
+import socket
 
 # Add CoquiTTS stuff
 from TTS.api import TTS
@@ -19,21 +21,6 @@ import time
 from jiwer import wer
 reference_file = 'english_patient.txt'  # reference text for WER calculation
 
-# ======= Logging and Arguments ======= #
-logger = logging.getLogger(__name__)
-parser = argparse.ArgumentParser()
-
-parser.add_argument("--host", type=str, default='localhost')
-parser.add_argument("--port", type=int, default=9000)
-parser.add_argument("--warmup-file", type=str, dest="warmup_file", 
-        help="The path to a speech audio wav file to warm up Whisper so that the very first chunk processing is fast. It can be e.g. https://github.com/ggerganov/whisper.cpp/raw/master/samples/jfk.wav .")
-
-# options from whisper_online
-add_shared_args(parser)
-args = parser.parse_args()
-
-set_logging(args,logger,other="")
-
 
 # ======= DESTUTTERING IMPORTS/CONSTANTS ======= #
 import sys
@@ -49,22 +36,6 @@ CMVN_PATH = 'C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025
 # Device agnostic code
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-# Create separate instances to allow for further parallelization and avoid cache thrashing
-destutterer_stt = Destutterer(config_path=CONFIG_PATH,
-                          ckpt_path=CKPT_PATH,
-                          cmvn_path=CMVN_PATH,
-                          sr=SAMPLING_RATE,
-                          device=device)
-destutterer_tts = Destutterer(config_path=CONFIG_PATH,
-                          ckpt_path=CKPT_PATH,
-                          cmvn_path=CMVN_PATH,
-                          sr=SAMPLING_RATE,
-                          device=device)
-
-# ======= Whisper Settings ======= #
-size = args.model
-language = args.lan
-asr, online = asr_factory(args)
 
 # Finding the right base for online
 def get_base_online():
@@ -75,9 +46,9 @@ def get_base_online():
         else:
             return online          # plain OnlineASRProcessor
         
-base_online = get_base_online()
+# base_online = get_base_online()
 
-min_chunk = args.min_chunk_size
+# min_chunk = args.min_chunk_size
 
 # ======= Latency Calculations ======= #
 latencies = []    # create list of latencies to track latency of each audio chunk so as to calculate average latency at end
@@ -92,16 +63,6 @@ GROUP = 'b'
 # TRIAL = '1'  #  will just have to manually rename the file as I test unless I wanna stop the server and restart it just to update the constant in file naming and that’s not worth it
 TRANSCRIPT_PATH = f'test_results/{GROUP}/transcript.txt'
 
-# ======= Set Up TTS ======= #
-# Initialize CoquiTTS with the target model name
-tts = TTS("tts_models/en/ljspeech/fast_pitch").to(device)
-
-# TTS Constants
-TTS_SR = tts.synthesizer.output_sample_rate  # TTS sampling rate
-
-# ======= Set Up RVC ======= #
-from rvc_conversion import RVC
-rvc_converter = RVC()   # initialize once; latency-optimized
 
 # ======= Other Toggles ======= #
 SAVE_TRANSCRIPT = True
@@ -109,28 +70,92 @@ tts_flag = False  # becomes true when a TTS client connects to the server
 rvc_flag = True   # choose whether to enable RVC or not
 
 
+# Main function within if __name__ == '__main__' to prevent infinite process spawning on Windows
+def main():
+    # Use global keywords so the rest of script can see these objects
+    global args, asr, online, base_online, rvc_converter, min_chunk, size, language, tts, TTS_SR, destutterer_stt, destutterer_tts
+    
+ 
+    # ======= Logging and Arguments ======= #
+    logger = logging.getLogger(__name__)
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("--host", type=str, default='localhost')
+    parser.add_argument("--port", type=int, default=9000)
+    parser.add_argument("--warmup-file", type=str, dest="warmup_file", 
+            help="The path to a speech audio wav file to warm up Whisper so that the very first chunk processing is fast. It can be e.g. https://github.com/ggerganov/whisper.cpp/raw/master/samples/jfk.wav .")
+
+    # options from whisper_online
+    add_shared_args(parser)
+    args = parser.parse_args()
+
+    set_logging(args,logger,other="")
+
+
+    # ======= Whisper Settings ======= #
+    size = args.model
+    language = args.lan
+    asr, online = asr_factory(args)
+
+    base_online = get_base_online()
+
+    min_chunk = args.min_chunk_size
+
+
+    # ======= Set Up TTS ======= #
+    # Initialize CoquiTTS with the target model name
+    tts = TTS("tts_models/en/ljspeech/fast_pitch").to(device)
+    # TTS Constants
+    TTS_SR = tts.synthesizer.output_sample_rate  # TTS sampling rate
+
+
+    # ======= Set Up Destutterers ======= #
+    destutterer_stt = Destutterer(config_path=CONFIG_PATH,
+                          ckpt_path=CKPT_PATH,
+                          cmvn_path=CMVN_PATH,
+                          sr=SAMPLING_RATE,
+                          device=device)
+    destutterer_tts = Destutterer(config_path=CONFIG_PATH,
+                          ckpt_path=CKPT_PATH,
+                          cmvn_path=CMVN_PATH,
+                          sr=SAMPLING_RATE,
+                          device=device)
+
+
+    # ======= Set Up RVC ======= #
+    from rvc_conversion import RVC
+    rvc_converter = RVC() # initialize once; latency-optimized 
 
 
 
-# warm up the ASR because the very first transcribe takes more time than the others. 
-# Test results in https://github.com/ufal/whisper_streaming/pull/81
-msg = "Whisper is not warmed up. The first chunk processing may take longer."
-if args.warmup_file:
-    if os.path.isfile(args.warmup_file):
-        a = load_audio_chunk(args.warmup_file,0,1)
-        asr.transcribe(a)
-        logger.info("Whisper is warmed up.")
+
+    # warm up the ASR because the very first transcribe takes more time than the others. 
+    # Test results in https://github.com/ufal/whisper_streaming/pull/81
+    msg = "Whisper is not warmed up. The first chunk processing may take longer."
+    if args.warmup_file:
+        if os.path.isfile(args.warmup_file):
+            a = load_audio_chunk(args.warmup_file,0,1)
+            asr.transcribe(a)
+            logger.info("Whisper is warmed up.")
+        else:
+            logger.critical("The warm up file is not available. "+msg)
+            sys.exit(1)
     else:
-        logger.critical("The warm up file is not available. "+msg)
-        sys.exit(1)
-else:
-    logger.warning(msg)
+        logger.warning(msg)
+
+    # Start the socket server
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        server = Server(sock, args.host, args.port)
+        server.listen()
+
+    logger.info("Server stopping...")
+    sys.exit(0)
+
+if __name__ == '__main__':
+    main()
 
 
 ######### Server objects
-
-import line_packet
-import socket
 
 class Connection:
     '''it wraps conn object'''
@@ -537,13 +562,13 @@ class Server:
         tts_destut_ls = []  # clear list
 
 
-# Server code
-with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        server = Server(sock, args.host, args.port)
-        server.listen()
+# # Server code
+# with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+#         server = Server(sock, args.host, args.port)
+#         server.listen()
 
-logger.info("Server stopping...")
-sys.exit(0)
+# logger.info("Server stopping...")
+# sys.exit(0)
 
 ### Old code from whisper_online_server.py below for reference ###
 # server loop
