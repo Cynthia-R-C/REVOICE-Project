@@ -60,7 +60,7 @@ tts_destut_ls = []
 rvc_ls = []
 
 # ======= Testing ======= #
-GROUP = 'b'
+GROUP = 'fun'
 # TRIAL = '1'  #  will just have to manually rename the file as I test unless I wanna stop the server and restart it just to update the constant in file naming and that’s not worth it
 TRANSCRIPT_PATH = f'test_results/{GROUP}/transcript.txt'
 
@@ -493,7 +493,7 @@ class Server:
                                 logger.debug("[RVC] TTS audio processed through RVC.")
                         else:
                             logger.debug(f"[RVC] Skipping RVC for short audio ({wav.shape[0]} samples)")
-                            
+
                     
                     tr1 = time.perf_counter()
                     logger.info(f'[LATENCY] RVC processing took {tr1 - tr0:.3f}s')

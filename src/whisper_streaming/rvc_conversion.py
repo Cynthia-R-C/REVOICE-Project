@@ -264,7 +264,7 @@ class GUIConfig:
         self.pitch: int = -9
         self.formant=0.0
         self.sr_type: str = "sr_model"
-        self.block_time: float = 0.5  # s
+        self.block_time: float = 1  # s
         self.threhold: int = -60
         self.crossfade_time: float = 0.05
         self.extra_time: float = 2.5

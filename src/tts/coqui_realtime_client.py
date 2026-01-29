@@ -29,7 +29,7 @@ accumulated_bytes = []
 accum_lock = Lock()  # For thread safety
 
 # Saving a final audio file
-GROUP = 'b'
+GROUP = 'fun'
 FINAL_AUDIO_PATH = f'C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\src\\whisper_streaming\\test_results\\{GROUP}\\final_received_audio.wav'
 
 def receive_from_server(sock, data_queue):
