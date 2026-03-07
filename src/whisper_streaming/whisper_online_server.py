@@ -60,7 +60,7 @@ tts_destut_ls = []
 rvc_ls = []
 
 # ======= Testing ======= #
-GROUP = 'fun'
+GROUP = 'energy_gate'
 # TRIAL = '1'  #  will just have to manually rename the file as I test unless I wanna stop the server and restart it just to update the constant in file naming and that’s not worth it
 TRANSCRIPT_PATH = f'test_results/{GROUP}/transcript.txt'
 

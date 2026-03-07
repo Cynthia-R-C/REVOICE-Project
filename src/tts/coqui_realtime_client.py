@@ -24,12 +24,16 @@ BYTES_PER_SAMPLE = np.dtype(DTYPE).itemsize  # 2 for int16
 audio_buffer = b''
 buffer_lock = Lock()
 
+# Reducing artificial blocks
+PREBUFFER_SECS = 0.7
+buffering = True
+
 # Byte list for saving a final audio file
 accumulated_bytes = []
 accum_lock = Lock()  # For thread safety
 
 # Saving a final audio file
-GROUP = 'fun'
+GROUP = 'energy_gate'
 FINAL_AUDIO_PATH = f'C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\src\\whisper_streaming\\test_results\\{GROUP}\\final_received_audio.wav'
 
 def receive_from_server(sock, data_queue):
@@ -57,12 +61,29 @@ def receive_from_server(sock, data_queue):
 def audio_callback(outdata, frames, time, status):
     '''Callback for outputting the received audio chunk'''
     global audio_buffer
+    global buffering
     needed_bytes = frames * BYTES_PER_SAMPLE * CHANNELS
 
+    # Calculate how many bytes we want before we start playing
+    prebuffer_bytes = int(SAMPLING_RATE * CHANNELS * BYTES_PER_SAMPLE * PREBUFFER_SECS)
+
     with buffer_lock:
-        # Pull from queue into buffer until we have enough or queue is empty
-        while len(audio_buffer) < needed_bytes and not data_queue.empty():
-            audio_buffer += data_queue.get()
+        # Pull all available data from the queue into the buffer
+        while not data_queue.empty():
+            try:
+                audio_buffer += data_queue.get_nowait()
+            except queue.Empty:
+                break
+
+        # Preventing artificial blocks
+        # If we're in buffering mode don't play anything until we hit the threshold
+        if buffering:
+            if len(audio_buffer) < prebuffer_bytes:
+                outdata.fill(0)
+                return
+            else:
+                print("Buffer filled, starting playback...")
+                buffering = False
 
         if len(audio_buffer) < needed_bytes:
             # Not enough data: fill with silence

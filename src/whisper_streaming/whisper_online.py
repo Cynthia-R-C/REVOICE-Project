@@ -23,6 +23,62 @@ def load_audio_chunk(fname, beg, end):
     end_s = int(end*16000)
     return audio[beg_s:end_s]
 
+# Custom-added energy gate
+class EnergyGate:
+    '''
+    Simple energy gate to prevent reading silences as "Thank you" without VAC/VAD
+    - Calculates RMS energy per incoming chunk
+    - Opens after speech_ms of continuous energy above threshold
+    - Closes after silence_ms of continuous energy below threshold
+    - Keeps preroll_ms of audio while closed so that the beginning of speech is not cut off
+    '''
+
+    def __init__(self, sr: int, silence_dbfs: float = 50, speech_ms: int = 250, silence_ms: int = 400, preroll_ms: int = 200):
+        # rms_threshold default 0.006
+        # speech_ms ensures gate won't open for short noises
+        # silence_ms prevents the gate from closing from stuff like intra-word gaps and quick pauses; if it cuts stuff off increase this, if still reading silences as speech make shorter
+        # preroll_ms = tail buffer so when speech starts the first phoneme isn't clipped; if still clipping raise, if too much latency lower
+        self.sr = sr
+        self.rms_threshold = math.pow(10, silence_dbfs/20)
+        self.speech_samples = int(sr * speech_ms / 1000)
+        self.silence_samples = int(sr * silence_ms / 1000)
+        self.preroll_samples = int(sr * preroll_ms / 1000)
+
+        self.above = 0  # samples above threshold
+        self.below = 0  # samples below threshold
+        self.is_open = False   # if true, allow audio to pass
+
+    # static method
+    @staticmethod
+    def rms(x):
+        # x is float32 audio in [-1, 1]
+        return float(np.sqrt(np.mean(x**2) + 1e-12))  # add tolerance to prevent downstream divide or log by 0
+    
+    def update(self, chunk: np.ndarray) -> bool:
+        '''
+        Update the gate state with a new audio chunk
+        - chunk: float32 numpy array of audio samples
+        - returns: whether the gate is open (allowing audio through)
+        '''
+        energy = self.rms(chunk)
+        if energy >= self.rms_threshold:  # above threshold
+            self.above += len(chunk)
+            self.below = 0
+
+            if not self.is_open and self.above >= self.speech_samples:   # only open after speech_ms of continuous energy above threshold
+                self.is_open = True
+                return True
+        
+        else:  # below threshold
+            self.below += len(chunk)
+            self.above = 0
+
+            if self.is_open and self.below >= self.silence_samples:  # only close after silence_ms of continuous energy below threshold
+                self.is_open = False
+                return False
+        
+        return self.is_open
+
 
 # Whisper backend
 
@@ -441,6 +497,7 @@ class OnlineASRProcessor:
         self.init()
 
         self.buffer_trimming_way, self.buffer_trimming_sec = buffer_trimming
+        
 
     def init(self, offset=None):
         """run this when starting or restarting processing"""
@@ -452,8 +509,27 @@ class OnlineASRProcessor:
         self.transcript_buffer.last_commited_time = self.buffer_time_offset
         self.commited = []
 
+        # Custom silence gate
+        self.energy_gate = EnergyGate(sr=self.SAMPLING_RATE,
+                                      silence_dbfs=-80, 
+                                      speech_ms=250, 
+                                      silence_ms=400, 
+                                      preroll_ms=200)
+
     def insert_audio_chunk(self, audio):
-        self.audio_buffer = np.append(self.audio_buffer, audio)
+        # update gate state based on this incoming chunk
+        gate_open = self.energy_gate.update(audio)
+
+        if gate_open:
+            # normal stuff, accumul audio while speech is present
+            self.audio_buffer = np.append(self.audio_buffer, audio)
+
+        else:
+            # gate closed = only keep small rolling buffer
+            self.audio_buffer = np.append(self.audio_buffer, audio)
+            if len(self.audio_buffer) > self.energy_gate.preroll_samples:  # don't keep more than the amount of preroll specified
+                self.audio_buffer = self.audio_buffer[-self.energy_gate.preroll_samples:]
+    
 
     def prompt(self):
         """Returns a tuple: (prompt, context), where "prompt" is a 200-character suffix of commited text that is inside of the scrolled away part of audio buffer. 
@@ -479,6 +555,11 @@ class OnlineASRProcessor:
         Returns: a tuple (beg_timestamp, end_timestamp, "text"), or (None, None, ""). 
         The non-emty text is confirmed (committed) partial transcript.
         """
+
+        # if gate closed don't decode
+        if not self.energy_gate.is_open:
+            logger.debug("Silence. No transcription.")
+            return (None, None, "")
 
         prompt, non_prompt = self.prompt()
         logger.debug(f"PROMPT: {prompt}")
