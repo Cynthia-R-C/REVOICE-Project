@@ -511,7 +511,7 @@ class OnlineASRProcessor:
 
         # Custom silence gate
         self.energy_gate = EnergyGate(sr=self.SAMPLING_RATE,
-                                      silence_dbfs=-80, 
+                                      silence_dbfs=-70, 
                                       speech_ms=250, 
                                       silence_ms=400, 
                                       preroll_ms=200)

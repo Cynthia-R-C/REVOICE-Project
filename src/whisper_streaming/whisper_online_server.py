@@ -21,6 +21,17 @@ import time
 from jiwer import wer
 reference_file = 'english_patient.txt'  # reference text for WER calculation
 
+latencies = []    # create list of latencies to track latency of each audio chunk so as to calculate average latency at end
+start_times = {}  # dict of average start time of current text segment
+# key is segment ID (segment start time)
+# value is average perf counter time of receiving the audio chunks
+stt_destut_ls = []
+tts_destut_ls = []
+rvc_ls = []
+tts_synth_ls = []
+stt_synth_ls = []
+queue_wait_ls = []
+
 
 # ======= DESTUTTERING IMPORTS/CONSTANTS ======= #
 import sys
@@ -50,14 +61,6 @@ def get_base_online():
 
 # min_chunk = args.min_chunk_size
 
-# ======= Latency Calculations ======= #
-latencies = []    # create list of latencies to track latency of each audio chunk so as to calculate average latency at end
-start_times = {}  # dict of average start time of current text segment
-# key is segment ID (segment start time)
-# value is average perf counter time of receiving the audio chunks
-stt_destut_ls = []
-tts_destut_ls = []
-rvc_ls = []
 
 # ======= Testing ======= #
 GROUP = 'energy_gate'
@@ -283,7 +286,8 @@ class ServerProcessor:
         Will be called no matter if TTS flag is on or off
         Assumes tts_queue is not None
         Assumes text is not None'''
-        self.tts_queue.put(o)
+        queue_t0 = time.perf_counter()   # latency tracking for time spent waiting in the queue
+        self.tts_queue.put((o, queue_t0))
         logger.info("New o added to TTS queue.")
 
     def process(self):
@@ -294,7 +298,11 @@ class ServerProcessor:
             if a is None:
                 break
             self.online_asr_proc.insert_audio_chunk(a)
+            stt_synth_t0 = time.perf_counter()
             o = online.process_iter()   # o[0]: beg, o[1]: end, o[2]: text string
+            stt_synth_t1 = time.perf_counter()
+            logger.info(f'[LATENCY] STT processing took {stt_synth_t1 - stt_synth_t0:.3f}s')
+            stt_synth_ls.append(stt_synth_t1 - stt_synth_t0)  # add to STT processing latency list
 
             # Find average start time perf counter and add to global tuple with ID
             avg_start_time = calc_avg(startTimes)
@@ -418,14 +426,22 @@ class Server:
             try:
                 # As long as queue is not empty, get text from queue, convert it to audio, and send it over
                 if not tts_queue.empty():
-                    o = tts_queue.get()  # this should also remove it from the queue
+                    (o, queue_putin_t) = tts_queue.get()  # this should also remove it from the queue
+                    queue_t1 = time.perf_counter()
+                    queue_wait_ls.append(queue_t1 - queue_putin_t)  # add to list of times spent waiting in the queue
+                    logger.info(f'[LATENCY] Time spent waiting in TTS queue: {queue_t1 - queue_putin_t:.3f}s')
+
                     logger.debug("o received from TTS queue.")
 
                     text = o[2]
 
                     # Generate speech
                     logger.debug("GENERATING TTS audio...")
+                    tts_synth_t0 = time.perf_counter()
                     wav = tts.tts(text)
+                    tts_synth_t1 = time.perf_counter()
+                    logger.info(f'[LATENCY] TTS synthesis took {tts_synth_t1 - tts_synth_t0:.3f}s')
+                    tts_synth_ls.append(tts_synth_t1 - tts_synth_t0)  # add to TTS synthesis latency list
 
                     logger.debug("TTS audio generated from text.")
                     wav = np.array(wav)   # convert to np array to avoid memory issues
@@ -535,6 +551,9 @@ class Server:
         global latencies   
         global stt_destut_ls
         global tts_destut_ls
+        global stt_synth_ls
+        global tts_synth_ls
+        global queue_wait_ls
 
         client_type = client['type']
         conn = client['conn/socket']
@@ -562,7 +581,10 @@ class Server:
             logger.info(f"WER: {txt_wer:.3f}")
 
         # Latency calculation
-        logger.info(f"Average latency: {calc_avg(latencies):.3f}s")
+        logger.info(f'Average latency: {calc_avg(latencies):.3f}s')
+        logger.info(f'Average STT synthesis latency: {calc_avg(stt_synth_ls):.3f}s')
+        logger.info(f'Average TTS synthesis latency: {calc_avg(tts_synth_ls):.3f}s')
+        logger.info(f'Average time spent waiting in TTS queue: {calc_avg(queue_wait_ls):.3f}s')
         logger.info(f'Average STT destuttering latency: {calc_avg(stt_destut_ls):.3f}s')
         logger.info(f'Average TTS destuttering latency: {calc_avg(tts_destut_ls):.3f}s')
         logger.info(f'Average RVC latency: {calc_avg(rvc_ls):.3f}s')
