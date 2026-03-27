@@ -80,7 +80,7 @@ class Destutterer:
         loc_end = (self.end_time - self.t_to_buffer) * self.sr  # buffer local
 
         # Guard: if loc_end - loc_start < hop
-        if loc_end - loc_start < hop * self.sr:
+        if loc_end - loc_start < hop:
             if client_type == 'stt':
                 # No windows, no stutter detected
                 t_maxs = {'/p': None, '/b': None, '/r': None, '/wr': None, '/i': None}
