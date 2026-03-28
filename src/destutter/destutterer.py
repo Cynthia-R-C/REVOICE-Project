@@ -14,6 +14,12 @@ bin_dir = os.path.abspath('C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\S
 sys.path.append(bin_dir)  # add destutter folder to paths to search
 from infer_sed_single import StutterSED
 
+# Tuning
+CROSSFADE = False  # whether or not to use crossfade
+FADE = 0.015  # 15 ms fade for crossfade_concat
+TARGET_KEEP = 0.12  # target keep length for /p destutter in seconds, tune by ear (e.g. 0.10–0.15)
+PAUSE = 0.10  # target pause length for /b destutter in seconds, tune by ear (e.g. 0.08–0.12)
+
 # Debug prints flag
 DEBUG = True
 
@@ -159,6 +165,44 @@ class Destutterer:
             return None
 
     
+    def crossfade_concat(self, audio1, audio2, fade_len=FADE):
+        '''Helper function to concatenate two audio segments with a crossfade to avoid clicks.
+        fade_len is in seconds.'''
+        
+        fade_samples = int(fade_len * self.sr)
+        
+        audio1 = np.asarray(audio1, dtype=np.float32).copy()
+        audio2 = np.asarray(audio2, dtype=np.float32).copy()
+
+        fade_samples = int(fade_len * self.sr)
+        fade_samples = max(1, min(fade_samples, len(audio1), len(audio2)))
+
+        if len(audio1) == 0:
+            return audio2
+        if len(audio2) == 0:
+            return audio1
+        if fade_samples <= 1:
+            return np.concatenate([audio1, audio2])
+
+        fade_out = np.linspace(1.0, 0.0, fade_samples, endpoint=True, dtype=np.float32)
+        fade_in = np.linspace(0.0, 1.0, fade_samples, endpoint=True, dtype=np.float32)
+
+        overlap = audio1[-fade_samples:] * fade_out + audio2[:fade_samples] * fade_in
+
+        return np.concatenate([
+            audio1[:-fade_samples],
+            overlap,
+            audio2[fade_samples:]
+        ])
+    
+
+    def crossfade_concat_three(self, audio1, audio2, audio3, fade_len=FADE):
+        '''Helper function to concatenate three audio segments with crossfades.
+        First concatenates audio1 and audio2, then concatenates the result with audio3.'''
+        temp = self.crossfade_concat(audio1, audio2, fade_len)
+        return self.crossfade_concat(temp, audio3, fade_len)
+
+    
     def p_destutter(self, audio_arr, t_start, t_end,):
         '''Destutter for /p: shorten the region but keep a small part
         Note: t_start and t_end are SEGMENT local, not audio buffer local like rest of code'''
@@ -181,7 +225,7 @@ class Destutterer:
         region_dur = region_len / self.sr   # time in s
 
         # Target final post-crop length
-        target_keep = 0.12  # 120 ms, tune this by ear (e.g. 0.10–0.15)
+        target_keep = TARGET_KEEP  # kinda redundant code but makes it easier to remember what this was for
 
         # If the prolongation is already short, don't touch it
         if region_dur <= target_keep:
@@ -194,8 +238,12 @@ class Destutterer:
         # Keep the first target_keep seconds, delete the rest
         region_short = region[:keep_len]
 
-        out = np.concatenate([audio_arr[:start_idx], region_short, audio_arr[end_idx:]])
+        if CROSSFADE:
+            out = self.crossfade_concat_three(audio_arr[:start_idx], region_short, audio_arr[end_idx:])  # new - crossfade concat
 
+        else:
+            out = np.concatenate([audio_arr[:start_idx], region_short, audio_arr[end_idx:]])  # old - hard concat
+        
         # Debug prints
         if DEBUG:
             t_start_global, t_end_global = self.seg_local_to_global(t_start, t_end)
@@ -222,8 +270,8 @@ class Destutterer:
         if region_len == 0:
             return audio_arr
 
-        # Target pause length: ~100 ms
-        pause_len = int(0.10 * self.sr)
+        # Target pause length
+        pause_len = int(PAUSE * self.sr)
 
         # If region is already shorter than this, just leave it as-is
         if region_len <= pause_len:
@@ -235,8 +283,12 @@ class Destutterer:
         pause = region[start_pause:end_pause]
 
         # audio_before + short_pause + audio_after
-        out = np.concatenate([audio_arr[:start_idx], pause, audio_arr[end_idx:]])
+        if CROSSFADE:
+            out = self.crossfade_concat_three(audio_arr[:start_idx], pause, audio_arr[end_idx:])  # new - crossfade concat
 
+        else:
+            out = np.concatenate([audio_arr[:start_idx], pause, audio_arr[end_idx:]])  # old - hard concat
+        
         # Debug prints
         if DEBUG:
             t_start_global, t_end_global = self.seg_local_to_global(t_start, t_end)
