@@ -63,7 +63,7 @@ def get_base_online():
 
 
 # ======= Testing ======= #
-GROUP = 'fun'
+GROUP = 'destut_type'
 # TRIAL = '1'  #  will just have to manually rename the file as I test unless I wanna stop the server and restart it just to update the constant in file naming and that’s not worth it
 TRANSCRIPT_PATH = f'test_results/{GROUP}/transcript.txt'
 
@@ -71,7 +71,9 @@ TRANSCRIPT_PATH = f'test_results/{GROUP}/transcript.txt'
 # ======= Other Toggles ======= #
 SAVE_TRANSCRIPT = True
 tts_flag = False  # becomes true when a TTS client connects to the server
-rvc_flag = True   # choose whether to enable RVC or not
+RVC_FLAG = False   # choose whether to enable RVC or not
+TXT_DESTUT = False # whether or not to do text destuttering
+AUD_DESTUT = False  # whether or not to do audio destuttering
 
 
 # Main function within if __name__ == '__main__' to prevent infinite process spawning on Windows
@@ -313,36 +315,38 @@ class ServerProcessor:
 
                 # ============== STT DESTUTTERING LOGIC ================ #
 
-                # Track destuttering logic start time
-                t0 = time.perf_counter()
+                if TXT_DESTUT:
 
-                t_to_buffer = base_online.buffer_time_offset  # time between global stream start and audio buffer start
-                audio_buffer = base_online.audio_buffer  # current audio buffer - a list of samples
-                beg_time = o[0]  # beg time of text (global)
-                end_time = o[1]  # end time of text (global)
-                text = o[2]      # text of current segment
-                
-                t_maxs, stutter_word_idxs = destutterer_stt.get_destutter_info('stt', t_to_buffer, audio_buffer, beg_time, end_time, text)  # get t_maxs and stutter word indices
-                
-                ## Simple: SOUND REP ##
-                destutterer_stt.r_destutter()
+                    # Track destuttering logic start time
+                    t0 = time.perf_counter()
 
-                ## Medium: WORD REP ##
-                # Only run this if word rep detected in model(?) might not be necessary, could just run this without model
-                if t_maxs['/wr'] is not None:
-                    destutterer_stt.wr_destutter()
+                    t_to_buffer = base_online.buffer_time_offset  # time between global stream start and audio buffer start
+                    audio_buffer = base_online.audio_buffer  # current audio buffer - a list of samples
+                    beg_time = o[0]  # beg time of text (global)
+                    end_time = o[1]  # end time of text (global)
+                    text = o[2]      # text of current segment
+                    
+                    t_maxs, stutter_word_idxs = destutterer_stt.get_destutter_info('stt', t_to_buffer, audio_buffer, beg_time, end_time, text)  # get t_maxs and stutter word indices
+                    
+                    ## Simple: SOUND REP ##
+                    destutterer_stt.r_destutter()
 
-                ## Complex: INTERJECTIONS ##
-                destutterer_stt.i_destutter(stutter_word_idxs)
+                    ## Medium: WORD REP ##
+                    # Only run this if word rep detected in model(?) might not be necessary, could just run this without model
+                    if t_maxs['/wr'] is not None:
+                        destutterer_stt.wr_destutter()
 
-                # Update output o with destuttered text
-                new_txt = destutterer_stt.get_text()
-                o = (o[0], o[1], new_txt)
+                    ## Complex: INTERJECTIONS ##
+                    destutterer_stt.i_destutter(stutter_word_idxs)
 
-                # See how long STT destuttering took
-                t1 = time.perf_counter()
-                logger.info(f"[LATENCY] STT get_destutter_info took {t1 - t0:.3f}s")
-                stt_destut_ls.append(t1 - t0)  # add to list of stt destuttering latencies
+                    # Update output o with destuttered text
+                    new_txt = destutterer_stt.get_text()
+                    o = (o[0], o[1], new_txt)
+
+                    # See how long STT destuttering took
+                    t1 = time.perf_counter()
+                    logger.info(f"[LATENCY] STT get_destutter_info took {t1 - t0:.3f}s")
+                    stt_destut_ls.append(t1 - t0)  # add to list of stt destuttering latencies
 
 
                 # ============== END DESTUTTERING LOGIC ================ #
@@ -464,35 +468,38 @@ class Server:
                     
                     # ============== TTS DESTUTTERING LOGIC ================ #
 
-                    # Latency time tracker
-                    t0 = time.perf_counter()
+                    if AUD_DESTUT:
 
-                    # TTS audio destuttering logic: prolongations & blocks
+                        # Latency time tracker
+                        t0 = time.perf_counter()
 
-                    t_to_buffer = base_online.buffer_time_offset  # time between global stream start and audio buffer start
-                    audio_buffer = base_online.audio_buffer  # current audio buffer - a list of samples
-                    beg_time = o[0]  # beg time of text (global)
-                    end_time = o[1]  # end time of text (global)
+                        # TTS audio destuttering logic: prolongations & blocks
 
-                    p_times, b_times = destutterer_tts.get_destutter_info('tts', t_to_buffer, audio_buffer, beg_time, end_time, text)  # get segment times to cut
+                        t_to_buffer = base_online.buffer_time_offset  # time between global stream start and audio buffer start
+                        audio_buffer = base_online.audio_buffer  # current audio buffer - a list of samples
+                        beg_time = o[0]  # beg time of text (global)
+                        end_time = o[1]  # end time of text (global)
 
-                    ## PROLONGATION ##
-                    wav = destutterer_tts.p_destutter(wav, p_times[0], p_times[1])
+                        p_times, b_times = destutterer_tts.get_destutter_info('tts', t_to_buffer, audio_buffer, beg_time, end_time, text)  # get segment times to cut
 
-                    ## BLOCK ##
-                    wav = destutterer_tts.b_destutter(wav, b_times[0], b_times[1])
+                        ## PROLONGATION ##
+                        wav = destutterer_tts.p_destutter(wav, p_times[0], p_times[1])
+
+                        ## BLOCK ##
+                        wav = destutterer_tts.b_destutter(wav, b_times[0], b_times[1])
+
+                        # Print section latency
+                        t1 = time.perf_counter()
+                        logger.info(f'[LATENCY] TTS get_destutter_info took {t1 - t0:.3f}s')
+                        tts_destut_ls.append(t1 - t0)  # add to list of tts destuttering latencies
 
 
                     # ============== DESTUTTERING LOGIC END ================ #
 
-                    # Print section latency
-                    t1 = time.perf_counter()
-                    logger.info(f'[LATENCY] TTS get_destutter_info took {t1 - t0:.3f}s')
-                    tts_destut_ls.append(t1 - t0)  # add to list of tts destuttering latencies
 
                     # RVC logic (if flag enabled)
                     tr0 = time.perf_counter()
-                    if rvc_flag:
+                    if RVC_FLAG:
 
                         # Only use RVC if audio is long enough to be meaningful
                         min_samples = 2000  # ~0.125s at 16kHz
