@@ -63,7 +63,7 @@ def get_base_online():
 
 
 # ======= Testing ======= #
-GROUP = 'destut_type'
+GROUP = 'tts_grouping'
 # TRIAL = '1'  #  will just have to manually rename the file as I test unless I wanna stop the server and restart it just to update the constant in file naming and that’s not worth it
 TRANSCRIPT_PATH = f'test_results/{GROUP}/transcript.txt'
 
@@ -74,6 +74,12 @@ tts_flag = False  # becomes true when a TTS client connects to the server
 RVC_FLAG = False   # choose whether to enable RVC or not
 TXT_DESTUT = False # whether or not to do text destuttering
 AUD_DESTUT = False  # whether or not to do audio destuttering
+
+TTS_GROUPING_ENABLED = True
+TTS_MAX_WAIT_SEC = 0.6
+TTS_MIN_WORDS = 6
+TTS_MAX_WORDS = 14
+TTS_END_PUNCT = ".?!"
 
 
 # Main function within if __name__ == '__main__' to prevent infinite process spawning on Windows
@@ -208,6 +214,13 @@ class ServerProcessor:
 
         self.is_first = True
 
+        # For TTS grouping buffer
+        self.tts_text_buffer = []
+        self.tts_buffer_start_time = None      # perf_counter when this group started buffering
+        self.tts_group_beg = None              # transcript timestamp of first chunk in group
+        self.tts_group_end = None              # transcript timestamp of latest chunk in group
+        self.tts_group_start_perf = None       # perf_counter corresponding to first chunk's arrival
+
     def receive_audio_chunk(self):
         '''
         receive all audio that is available by this time
@@ -276,21 +289,98 @@ class ServerProcessor:
         msg = self.format_output_transcript(o)  # string of timestamps + pure text
         if msg is not None:
             self.connection.send(msg)  # send to STT client
-            self.put_to_tts(o)
+
+            # Toggle between grouping and not grouping
+            if TTS_GROUPING_ENABLED:
+                self.group_and_put_to_tts(o)
+            else:
+                self.put_to_tts(o)
         
             if SAVE_TRANSCRIPT:
                 # Write the text to the output transcript file
                 self.out_file.write(o[2])
 
+    def flush_tts_group(self):
+        '''Force any buffered grouped TTS text into the queue.'''
+
+        # If empty
+        if not self.tts_text_buffer:
+            return
+
+        full_text = " ".join(self.tts_text_buffer).strip()
+
+        # If empty after stripping
+        if not full_text:
+            return
+
+        # Send the rest without waiting for grouping conditions
+        grouped_o = (self.tts_group_beg, self.tts_group_end, full_text)
+        queue_t0 = time.perf_counter()
+        self.tts_queue.put((grouped_o, queue_t0, self.tts_group_start_perf))
+        logger.info(f'Flushed final TTS grouped chunk: {full_text!r}')
+
+        # Reset all the necessary stuff
+        self.tts_text_buffer = []
+        self.tts_buffer_start_time = None
+        self.tts_group_beg = None
+        self.tts_group_end = None
+        self.tts_group_start_perf = None
+
+    def group_and_put_to_tts(self, o):
+        '''Do prosody-based group enqueuing rather than direct TTS queuing'''
+        text = o[2].strip()
+        if not text:
+            return
+
+        now = time.perf_counter()
+
+        # Keeps track for stuff like calculating if waited too long
+        if self.tts_buffer_start_time is None:
+            self.tts_buffer_start_time = now
+
+        # If this is the start of a prosody group, record start timestamp
+        if not self.tts_text_buffer:
+            self.tts_group_beg = o[0]
+            self.tts_group_start_perf = start_times.get(o[0], now)
+
+        self.tts_group_end = o[1]
+        self.tts_text_buffer.append(text)
+
+        full_text = " ".join(self.tts_text_buffer).strip()  # add to text buffer
+        word_count = len(full_text.split())
+
+        # Determine whether conditions for grouping / pushing are met
+        ends_cleanly = len(text) > 0 and text[-1] in TTS_END_PUNCT
+        waited_too_long = (now - self.tts_buffer_start_time) >= TTS_MAX_WAIT_SEC
+        enough_words = word_count >= TTS_MIN_WORDS
+        too_many_words = word_count >= TTS_MAX_WORDS
+
+        if ends_cleanly or too_many_words or (waited_too_long and enough_words):
+            grouped_o = (self.tts_group_beg, self.tts_group_end, full_text)
+            queue_t0 = time.perf_counter()
+
+            # Send the group's true start perf-counter through the queue too
+            self.tts_queue.put((grouped_o, queue_t0, self.tts_group_start_perf))
+            logger.info(f'TTS grouped chunk queued: {full_text!r}')
+
+            self.tts_text_buffer = []
+            self.tts_buffer_start_time = None
+            self.tts_group_beg = None
+            self.tts_group_end = None
+            self.tts_group_start_perf = None
+
 
     def put_to_tts(self, o):
-        '''Puts the newly generated STT o to the TTS queue;
+        '''Old function.
+        Puts the newly generated STT o to the TTS queue;
         Will be called no matter if TTS flag is on or off
         Assumes tts_queue is not None
         Assumes text is not None'''
         queue_t0 = time.perf_counter()   # latency tracking for time spent waiting in the queue
-        self.tts_queue.put((o, queue_t0))
+        chunk_start_perf = start_times.get(o[0], queue_t0)
+        self.tts_queue.put((o, queue_t0, chunk_start_perf))  # adjust shape for regular vs grouped queuing (changed shape from before)
         logger.info("New o added to TTS queue.")
+
 
     def process(self):
         '''handle one stt client connection'''
@@ -306,12 +396,11 @@ class ServerProcessor:
             logger.info(f'[LATENCY] STT processing took {stt_synth_t1 - stt_synth_t0:.3f}s')
             stt_synth_ls.append(stt_synth_t1 - stt_synth_t0)  # add to STT processing latency list
 
-            # Find average start time perf counter and add to global tuple with ID
-            avg_start_time = calc_avg(startTimes)
-            start_times[o[0]] = avg_start_time
-
-
             if o[0] is not None:  # if audio is not blank
+
+                # Find average start time perf counter and add to global tuple with ID
+                avg_start_time = calc_avg(startTimes)
+                start_times[o[0]] = avg_start_time
 
                 # ============== STT DESTUTTERING LOGIC ================ #
 
@@ -362,6 +451,9 @@ class ServerProcessor:
             except BrokenPipeError:
                 logger.info("broken pipe -- connection closed?")
                 break
+
+        if TTS_GROUPING_ENABLED:  # flush if leftover stuff left in tts buffer
+            self.flush_tts_group()
 
 #        o = online.finish()  # this should be working
 #        self.send_result(o)
@@ -430,7 +522,9 @@ class Server:
             try:
                 # As long as queue is not empty, get text from queue, convert it to audio, and send it over
                 if not tts_queue.empty():
-                    (o, queue_putin_t) = tts_queue.get()  # this should also remove it from the queue
+                    # for regular, queue contents = (o, queue_putin_t, chunk_start_perf), where o is regular (beg_stamp, end_stamp, txt)
+                    # for grouped, queue contents = (grouped_o, queue_putin_t, group_start_perf), where o is (group_beg_stamp, group_end_stamp, full_grouped_txt)
+                    (o, queue_putin_t, group_start_perf) = tts_queue.get()  # this should also remove it from the queue
                     queue_t1 = time.perf_counter()
                     queue_wait_ls.append(queue_t1 - queue_putin_t)  # add to list of times spent waiting in the queue
                     logger.info(f'[LATENCY] Time spent waiting in TTS queue: {queue_t1 - queue_putin_t:.3f}s')
@@ -524,13 +618,16 @@ class Server:
 
                     # Convert to 16-bit PCM
                     wav_pcm = (wav * 32767).astype(np.int16)
-
+                    
                     # Record end time for latency
-                    endTime = time.perf_counter() 
+                    endTime = time.perf_counter()
                     # Now add latencies of that audio just then to latencies list
-                    latencies.append(endTime - start_times[o[0]])
+                    latencies.append(endTime - group_start_perf)
+
                     # Remove start time for this segment from the start_times dictionary
-                    del start_times[o[0]]
+                    # But clean up only if that key exists in the dict
+                    if o[0] in start_times:
+                        del start_times[o[0]]
                    
                     # Send the packet of audio data
                     try:
