@@ -3,8 +3,9 @@ from whisper_online import *  #
 import line_packet
 import socket
 
-# Add CoquiTTS stuff
-from TTS.api import TTS
+# Add TTS stuff
+from TTS.api import TTS  # CoquiTTS
+# from melo.api import TTS  # MeloTTS, which has better prosody control
 import torch   # for running on GPU
 from threading import Thread
 import queue  # for TTS text queue
@@ -63,7 +64,7 @@ def get_base_online():
 
 
 # ======= Testing ======= #
-GROUP = 'tts_grouping'
+GROUP = 'tts_grouping_longer_v4'
 # TRIAL = '1'  #  will just have to manually rename the file as I test unless I wanna stop the server and restart it just to update the constant in file naming and that’s not worth it
 TRANSCRIPT_PATH = f'test_results/{GROUP}/transcript.txt'
 
@@ -73,12 +74,17 @@ SAVE_TRANSCRIPT = True
 tts_flag = False  # becomes true when a TTS client connects to the server
 RVC_FLAG = False   # choose whether to enable RVC or not
 TXT_DESTUT = False # whether or not to do text destuttering
-AUD_DESTUT = False  # whether or not to do audio destuttering
+AUD_DESTUT = False  # whether or not to do audio 
+
+# TTS_MODEL = 'tts_models/multilingual/multi-dataset/xtts_v2'
+TTS_MODEL = 'tts_models/en/ljspeech/fast_pitch'  # CoquiTTS model to use
+# TTS_LANG = 'en'
 
 TTS_GROUPING_ENABLED = True
-TTS_MAX_WAIT_SEC = 0.6
-TTS_MIN_WORDS = 6
-TTS_MAX_WORDS = 14
+ARTIFIC_INTON = False   # whether or not to normalize text groups with punctuation before TTS conversion
+TTS_MAX_WAIT_SEC = 15
+TTS_MIN_WORDS = 10
+TTS_MAX_WORDS = 20
 TTS_END_PUNCT = ".?!"
 
 
@@ -116,7 +122,7 @@ def main():
 
     # ======= Set Up TTS ======= #
     # Initialize CoquiTTS with the target model name
-    tts = TTS("tts_models/en/ljspeech/fast_pitch").to(device)
+    tts = TTS(TTS_MODEL).to(device)
     # TTS Constants
     TTS_SR = tts.synthesizer.output_sample_rate  # TTS sampling rate
 
@@ -536,6 +542,12 @@ class Server:
                     # Generate speech
                     logger.debug("GENERATING TTS audio...")
                     tts_synth_t0 = time.perf_counter()
+
+                    # Artificially normalize text by adding periods to pauses in text so TTS better captures intonation
+                    if ARTIFIC_INTON:
+                        if text and text[-1] not in ".?!":
+                            text += "."
+
                     wav = tts.tts(text)
                     tts_synth_t1 = time.perf_counter()
                     logger.info(f'[LATENCY] TTS synthesis took {tts_synth_t1 - tts_synth_t0:.3f}s')
