@@ -3,9 +3,6 @@ from whisper_online import *  #
 import line_packet
 import socket
 
-# Add TTS stuff
-from TTS.api import TTS  # CoquiTTS
-# from melo.api import TTS  # MeloTTS, which has better prosody control
 import torch   # for running on GPU
 from threading import Thread
 import queue  # for TTS text queue
@@ -64,7 +61,7 @@ def get_base_online():
 
 
 # ======= Testing ======= #
-GROUP = 'tts_grouping_longer_v4'
+GROUP = 'tts_grouping_longer_v4_melo'
 # TRIAL = '1'  #  will just have to manually rename the file as I test unless I wanna stop the server and restart it just to update the constant in file naming and that’s not worth it
 TRANSCRIPT_PATH = f'test_results/{GROUP}/transcript.txt'
 
@@ -76,9 +73,26 @@ RVC_FLAG = False   # choose whether to enable RVC or not
 TXT_DESTUT = False # whether or not to do text destuttering
 AUD_DESTUT = False  # whether or not to do audio 
 
+USE_COQUI = False
+USE_MELO = True
+
+if USE_COQUI and USE_MELO:  # just in case
+    raise ValueError("Do not set both USE_COQUI and USE_MELO to True.")
+
+# Add TTS stuff
+if USE_COQUI:
+    from TTS.api import TTS as CoquiTTS  # CoquiTTS
+elif USE_MELO:
+    from melo.api import TTS as MeloTTS  # MeloTTS, which has better prosody control
+
+# Coqui settings
 # TTS_MODEL = 'tts_models/multilingual/multi-dataset/xtts_v2'
-TTS_MODEL = 'tts_models/en/ljspeech/fast_pitch'  # CoquiTTS model to use
-# TTS_LANG = 'en'
+COQUI_MODEL = 'tts_models/en/ljspeech/fast_pitch'
+
+# Melo settings
+MELO_LANGUAGE = 'EN'
+MELO_SPEAKER = 'EN-US'
+MELO_SPEED = 0.8
 
 TTS_GROUPING_ENABLED = True
 ARTIFIC_INTON = False   # whether or not to normalize text groups with punctuation before TTS conversion
@@ -91,7 +105,8 @@ TTS_END_PUNCT = ".?!"
 # Main function within if __name__ == '__main__' to prevent infinite process spawning on Windows
 def main():
     # Use global keywords so the rest of script can see these objects
-    global args, asr, online, base_online, rvc_converter, min_chunk, size, language, tts, TTS_SR, destutterer_stt, destutterer_tts
+    global args, asr, online, base_online, rvc_converter, min_chunk, size, language
+    global tts, TTS_SR, destutterer_stt, destutterer_tts, melo_speaker_ids
     
  
     # ======= Logging and Arguments ======= #
@@ -121,10 +136,23 @@ def main():
 
 
     # ======= Set Up TTS ======= #
-    # Initialize CoquiTTS with the target model name
-    tts = TTS(TTS_MODEL).to(device)
-    # TTS Constants
-    TTS_SR = tts.synthesizer.output_sample_rate  # TTS sampling rate
+    if USE_COQUI:
+        tts = CoquiTTS(COQUI_MODEL).to(device)
+        TTS_SR = tts.synthesizer.output_sample_rate
+        melo_speaker_ids = None
+
+    elif USE_MELO:
+        tts = MeloTTS(language=MELO_LANGUAGE, device=device)
+        melo_speaker_ids = tts.hps.data.spk2id
+        TTS_SR = tts.hps.data.sampling_rate
+
+    else:
+        print('[WARNING] Not using either CoquiTTS or MeloTTS')
+    
+    # # Initialize CoquiTTS with the target model name
+    # tts = TTS(TTS_MODEL).to(device)
+    # # TTS Constants
+    # TTS_SR = tts.synthesizer.output_sample_rate  # TTS sampling rate
 
 
     # ======= Set Up Destutterers ======= #
@@ -485,6 +513,30 @@ def calc_wer(transcript_path, ref_path):
     return wer(ref_txt, transc_txt)
 
 
+def synthesize_text(text):
+    '''Helper function for TTS synthesis'''
+
+    if USE_COQUI:
+        return tts.tts(text)
+
+    elif USE_MELO:
+        speaker_id = melo_speaker_ids[MELO_SPEAKER]
+
+        # Melo writes to file, so use temp file and read it back
+        temp_path = 'temp_melo_tts.wav'
+        tts.tts_to_file(
+            text=text,
+            speaker_id=speaker_id,
+            output_path=temp_path,
+            speed=MELO_SPEED
+        )
+
+        wav, sr = librosa.load(temp_path, sr=None, mono=True)
+        return wav
+
+    else:
+        raise ValueError('No TTS backend selected.')
+
 
 class Server:
     Clients = [] # list of client threads
@@ -548,7 +600,8 @@ class Server:
                         if text and text[-1] not in ".?!":
                             text += "."
 
-                    wav = tts.tts(text)
+                    # wav = tts.tts(text)
+                    wav = synthesize_text(text)
                     tts_synth_t1 = time.perf_counter()
                     logger.info(f'[LATENCY] TTS synthesis took {tts_synth_t1 - tts_synth_t0:.3f}s')
                     tts_synth_ls.append(tts_synth_t1 - tts_synth_t0)  # add to TTS synthesis latency list
@@ -558,7 +611,7 @@ class Server:
                     #logger.debug("wav shape:", wav.shape, "dtype:", wav.dtype)
 
                     # Debugging
-                    print(f"TTS output sample rate: {tts.synthesizer.output_sample_rate}")
+                    print(f"TTS output sample rate: {TTS_SR}")
                     print(f"Original wav shape: {wav.shape}, dtype: {wav.dtype}")
                     soundfile.write(f'original_{TTS_SR}hz.wav', wav, TTS_SR)  # Save original before resampling
 
