@@ -61,7 +61,7 @@ def get_base_online():
 
 
 # ======= Testing ======= #
-GROUP = 'tts_grouping_longer_v4_melo'
+GROUP = 'tts_grouping_longer_v4_melo_artint_rvc'
 # TRIAL = '1'  #  will just have to manually rename the file as I test unless I wanna stop the server and restart it just to update the constant in file naming and that’s not worth it
 TRANSCRIPT_PATH = f'test_results/{GROUP}/transcript.txt'
 
@@ -69,7 +69,7 @@ TRANSCRIPT_PATH = f'test_results/{GROUP}/transcript.txt'
 # ======= Other Toggles ======= #
 SAVE_TRANSCRIPT = True
 tts_flag = False  # becomes true when a TTS client connects to the server
-RVC_FLAG = False   # choose whether to enable RVC or not
+RVC_FLAG = True   # choose whether to enable RVC or not
 TXT_DESTUT = False # whether or not to do text destuttering
 AUD_DESTUT = False  # whether or not to do audio 
 
@@ -91,12 +91,12 @@ COQUI_MODEL = 'tts_models/en/ljspeech/fast_pitch'
 
 # Melo settings
 MELO_LANGUAGE = 'EN'
-MELO_SPEAKER = 'EN-US'
+MELO_SPEAKER = 'EN-Default'
 MELO_SPEED = 0.8
 
 TTS_GROUPING_ENABLED = True
-ARTIFIC_INTON = False   # whether or not to normalize text groups with punctuation before TTS conversion
-TTS_MAX_WAIT_SEC = 15
+ARTIFIC_INTON = True   # whether or not to normalize text groups with punctuation before TTS conversion
+TTS_MAX_WAIT_SEC = 20
 TTS_MIN_WORDS = 10
 TTS_MAX_WORDS = 20
 TTS_END_PUNCT = ".?!"
@@ -390,6 +390,9 @@ class ServerProcessor:
         too_many_words = word_count >= TTS_MAX_WORDS
 
         if ends_cleanly or too_many_words or (waited_too_long and enough_words):
+            if ARTIFIC_INTON and full_text and full_text[-1] not in TTS_END_PUNCT:
+                full_text += ","  # artificially add for better intonation in TTS
+
             grouped_o = (self.tts_group_beg, self.tts_group_end, full_text)
             queue_t0 = time.perf_counter()
 
@@ -597,8 +600,8 @@ class Server:
 
                     # Artificially normalize text by adding periods to pauses in text so TTS better captures intonation
                     if ARTIFIC_INTON:
-                        if text and text[-1] not in ".?!":
-                            text += "."
+                        if text and text[-1] not in TTS_END_PUNCT:
+                            text += ","
 
                     # wav = tts.tts(text)
                     wav = synthesize_text(text)
