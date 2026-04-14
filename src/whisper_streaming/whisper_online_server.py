@@ -28,7 +28,7 @@ tts_destut_ls = []
 rvc_ls = []
 tts_synth_ls = []
 stt_synth_ls = []
-queue_wait_ls = []
+buffer_and_queue_wait_ls = []
 
 
 # ======= DESTUTTERING IMPORTS/CONSTANTS ======= #
@@ -61,9 +61,10 @@ def get_base_online():
 
 
 # ======= Testing ======= #
-GROUP = 'tts_grouping_longer_v4_melo_artint_rvc'
+GROUP = 'latency_testing'
 # TRIAL = '1'  #  will just have to manually rename the file as I test unless I wanna stop the server and restart it just to update the constant in file naming and that’s not worth it
 TRANSCRIPT_PATH = f'test_results/{GROUP}/transcript.txt'
+STATS_PATH = f'test_results/{GROUP}/stats.txt'
 
 
 # ======= Other Toggles ======= #
@@ -97,9 +98,9 @@ MELO_SPEED = 0.8
 TTS_GROUPING_ENABLED = True
 ARTIFIC_INTON = True   # whether or not to normalize text groups with punctuation before TTS conversion
 TTS_MAX_WAIT_SEC = 20
-TTS_MIN_WORDS = 10
+TTS_MIN_WORDS = 1
 TTS_MAX_WORDS = 20
-TTS_END_PUNCT = ".?!"
+TTS_END_PUNCT = '.?!,:;'
 
 
 # Main function within if __name__ == '__main__' to prevent infinite process spawning on Windows
@@ -254,6 +255,9 @@ class ServerProcessor:
         self.tts_group_beg = None              # transcript timestamp of first chunk in group
         self.tts_group_end = None              # transcript timestamp of latest chunk in group
         self.tts_group_start_perf = None       # perf_counter corresponding to first chunk's arrival
+        
+        self.last_text_received_time = time.perf_counter()  # track when last text was received for auto buffer flushing after inactivity
+        self.SILENCE_TIMEOUT = 0.3  # Seconds of silence before forcing flush
 
     def receive_audio_chunk(self):
         '''
@@ -349,8 +353,8 @@ class ServerProcessor:
 
         # Send the rest without waiting for grouping conditions
         grouped_o = (self.tts_group_beg, self.tts_group_end, full_text)
-        queue_t0 = time.perf_counter()
-        self.tts_queue.put((grouped_o, queue_t0, self.tts_group_start_perf))
+        # queue_t0 = time.perf_counter()  # Using self.tts_buffer_start_time instead
+        self.tts_queue.put((grouped_o, self.tts_buffer_start_time, self.tts_group_start_perf))
         logger.info(f'Flushed final TTS grouped chunk: {full_text!r}')
 
         # Reset all the necessary stuff
@@ -370,7 +374,7 @@ class ServerProcessor:
 
         # Keeps track for stuff like calculating if waited too long
         if self.tts_buffer_start_time is None:
-            self.tts_buffer_start_time = now
+            self.tts_buffer_start_time = now  # start time for tts buffer latency tracking
 
         # If this is the start of a prosody group, record start timestamp
         if not self.tts_text_buffer:
@@ -394,10 +398,10 @@ class ServerProcessor:
                 full_text += ","  # artificially add for better intonation in TTS
 
             grouped_o = (self.tts_group_beg, self.tts_group_end, full_text)
-            queue_t0 = time.perf_counter()
+            # queue_t0 = time.perf_counter()   # not using this anymore, using the grouped buffer start time instead to get the full picture of the latency
 
             # Send the group's true start perf-counter through the queue too
-            self.tts_queue.put((grouped_o, queue_t0, self.tts_group_start_perf))
+            self.tts_queue.put((grouped_o, self.tts_buffer_start_time, self.tts_group_start_perf))
             logger.info(f'TTS grouped chunk queued: {full_text!r}')
 
             self.tts_text_buffer = []
@@ -429,6 +433,9 @@ class ServerProcessor:
             self.online_asr_proc.insert_audio_chunk(a)
             stt_synth_t0 = time.perf_counter()
             o = online.process_iter()   # o[0]: beg, o[1]: end, o[2]: text string
+
+            now = time.perf_counter()
+
             stt_synth_t1 = time.perf_counter()
             logger.info(f'[LATENCY] STT processing took {stt_synth_t1 - stt_synth_t0:.3f}s')
             stt_synth_ls.append(stt_synth_t1 - stt_synth_t0)  # add to STT processing latency list
@@ -438,6 +445,8 @@ class ServerProcessor:
                 # Find average start time perf counter and add to global tuple with ID
                 avg_start_time = calc_avg(startTimes)
                 start_times[o[0]] = avg_start_time
+
+                self.last_text_received_time = now
 
                 # ============== STT DESTUTTERING LOGIC ================ #
 
@@ -477,17 +486,22 @@ class ServerProcessor:
 
                 # ============== END DESTUTTERING LOGIC ================ #
             
-            try:
-                self.send_result(o)  # sends it to the client and if toggled on to the transcript file and TTS queue
+                try:
+                    self.send_result(o)  # sends it to the client and if toggled on to the transcript file and TTS queue
 
-                # # Now add latencies of that audio just then to latencies list  # old latencies calculation code
-                # endTime = time.perf_counter()  # perf_counter is more precise
-                # for startTime in startTimes:
-                #     latencies.append(endTime - startTime)
+                    # # Now add latencies of that audio just then to latencies list  # old latencies calculation code
+                    # endTime = time.perf_counter()  # perf_counter is more precise
+                    # for startTime in startTimes:
+                    #     latencies.append(endTime - startTime)
 
-            except BrokenPipeError:
-                logger.info("broken pipe -- connection closed?")
-                break
+                except BrokenPipeError:
+                    logger.info("broken pipe -- connection closed?")
+                    break
+
+            else:
+                if TTS_GROUPING_ENABLED and self.tts_text_buffer and (now - self.last_text_received_time) > self.SILENCE_TIMEOUT:
+                    logger.info(f'\n\nSilence timeout of {self.SILENCE_TIMEOUT}s reached. Flushing buffer.\n\n')
+                    self.flush_tts_group()
 
         if TTS_GROUPING_ENABLED:  # flush if leftover stuff left in tts buffer
             self.flush_tts_group()
@@ -583,12 +597,12 @@ class Server:
             try:
                 # As long as queue is not empty, get text from queue, convert it to audio, and send it over
                 if not tts_queue.empty():
-                    # for regular, queue contents = (o, queue_putin_t, chunk_start_perf), where o is regular (beg_stamp, end_stamp, txt)
-                    # for grouped, queue contents = (grouped_o, queue_putin_t, group_start_perf), where o is (group_beg_stamp, group_end_stamp, full_grouped_txt)
-                    (o, queue_putin_t, group_start_perf) = tts_queue.get()  # this should also remove it from the queue
+                    # for regular, queue contents = (o, buffer_start_t, chunk_start_perf), where o is regular (beg_stamp, end_stamp, txt)
+                    # for grouped, queue contents = (grouped_o, buffer_start_t, group_start_perf), where o is (group_beg_stamp, group_end_stamp, full_grouped_txt)
+                    (o, buffer_start_t, group_start_perf) = tts_queue.get()  # this should also remove it from the queue
                     queue_t1 = time.perf_counter()
-                    queue_wait_ls.append(queue_t1 - queue_putin_t)  # add to list of times spent waiting in the queue
-                    logger.info(f'[LATENCY] Time spent waiting in TTS queue: {queue_t1 - queue_putin_t:.3f}s')
+                    buffer_and_queue_wait_ls.append(queue_t1 - buffer_start_t)  # add to list of times spent waiting in the queue
+                    logger.info(f'[LATENCY] Total time in buffer & TTS queue: {queue_t1 - buffer_start_t:.3f}s')
 
                     logger.debug("o received from TTS queue.")
 
@@ -725,7 +739,7 @@ class Server:
         global tts_destut_ls
         global stt_synth_ls
         global tts_synth_ls
-        global queue_wait_ls
+        global buffer_and_queue_wait_ls
 
         client_type = client['type']
         conn = client['conn/socket']
@@ -756,10 +770,23 @@ class Server:
         logger.info(f'Average latency: {calc_avg(latencies):.3f}s')
         logger.info(f'Average STT synthesis latency: {calc_avg(stt_synth_ls):.3f}s')
         logger.info(f'Average TTS synthesis latency: {calc_avg(tts_synth_ls):.3f}s')
-        logger.info(f'Average time spent waiting in TTS queue: {calc_avg(queue_wait_ls):.3f}s')
+        logger.info(f'Average time spent waiting in buffer & TTS queue: {calc_avg(buffer_and_queue_wait_ls):.3f}s')
         logger.info(f'Average STT destuttering latency: {calc_avg(stt_destut_ls):.3f}s')
         logger.info(f'Average TTS destuttering latency: {calc_avg(tts_destut_ls):.3f}s')
         logger.info(f'Average RVC latency: {calc_avg(rvc_ls):.3f}s')
+
+        # Save in stats file
+        stats = open(STATS_PATH, 'w')
+        stats.write(f"WER: {txt_wer:.3f}\n")
+        stats.write(f'Average latency: {calc_avg(latencies):.3f}s\n')
+        stats.write(f'Average STT synthesis latency: {calc_avg(stt_synth_ls):.3f}s\n')
+        stats.write(f'Average TTS synthesis latency: {calc_avg(tts_synth_ls):.3f}s\n')
+        stats.write(f'Average time spent waiting in buffer & TTS queue: {calc_avg(buffer_and_queue_wait_ls):.3f}s\n')
+        stats.write(f'Average STT destuttering latency: {calc_avg(stt_destut_ls):.3f}s\n')
+        stats.write(f'Average TTS destuttering latency: {calc_avg(tts_destut_ls):.3f}s\n')
+        stats.write(f'Average RVC latency: {calc_avg(rvc_ls):.3f}s\n')
+        stats.close()
+
         latencies = []   # clear latencies list for next client session
         stt_destut_ls = []  # clear list
         tts_destut_ls = []  # clear list
