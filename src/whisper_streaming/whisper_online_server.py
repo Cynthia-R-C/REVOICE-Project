@@ -97,7 +97,7 @@ MELO_SPEED = 0.8
 
 TTS_GROUPING_ENABLED = True
 ARTIFIC_INTON = True   # whether or not to normalize text groups with punctuation before TTS conversion
-TTS_MAX_WAIT_SEC = 20
+TTS_MAX_WAIT_SEC = 10
 TTS_MIN_WORDS = 1
 TTS_MAX_WORDS = 20
 TTS_END_PUNCT = '.?!,:;'
