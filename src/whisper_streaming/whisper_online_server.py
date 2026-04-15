@@ -97,9 +97,8 @@ MELO_SPEED = 0.8
 
 TTS_GROUPING_ENABLED = True
 ARTIFIC_INTON = True   # whether or not to normalize text groups with punctuation before TTS conversion
-TTS_MAX_WAIT_SEC = 10
-TTS_MIN_WORDS = 1
-TTS_MAX_WORDS = 20
+TTS_MAX_WAIT_SEC = 1.2
+SILENCE_TIMEOUT = 0.7   # Seconds of silence before forcing flush
 TTS_END_PUNCT = '.?!,:;'
 
 
@@ -257,7 +256,7 @@ class ServerProcessor:
         self.tts_group_start_perf = None       # perf_counter corresponding to first chunk's arrival
         
         self.last_text_received_time = time.perf_counter()  # track when last text was received for auto buffer flushing after inactivity
-        self.SILENCE_TIMEOUT = 0.3  # Seconds of silence before forcing flush
+        self.SILENCE_TIMEOUT = SILENCE_TIMEOUT  # Seconds of silence before forcing flush
 
     def receive_audio_chunk(self):
         '''
@@ -350,12 +349,15 @@ class ServerProcessor:
         # If empty after stripping
         if not full_text:
             return
+        
+        if ARTIFIC_INTON and full_text[-1] not in TTS_END_PUNCT:
+            full_text += "."    # artificial intonation PERIOD - pause
 
         # Send the rest without waiting for grouping conditions
         grouped_o = (self.tts_group_beg, self.tts_group_end, full_text)
         # queue_t0 = time.perf_counter()  # Using self.tts_buffer_start_time instead
         self.tts_queue.put((grouped_o, self.tts_buffer_start_time, self.tts_group_start_perf))
-        logger.info(f'Flushed final TTS grouped chunk: {full_text!r}')
+        logger.info(f'\n\n\n[FLUSH] Flushed final TTS grouped chunk: {full_text!r}\n\n\n')
 
         # Reset all the necessary stuff
         self.tts_text_buffer = []
@@ -390,12 +392,10 @@ class ServerProcessor:
         # Determine whether conditions for grouping / pushing are met
         ends_cleanly = len(text) > 0 and text[-1] in TTS_END_PUNCT
         waited_too_long = (now - self.tts_buffer_start_time) >= TTS_MAX_WAIT_SEC
-        enough_words = word_count >= TTS_MIN_WORDS
-        too_many_words = word_count >= TTS_MAX_WORDS
 
-        if ends_cleanly or too_many_words or (waited_too_long and enough_words):
+        if ends_cleanly or waited_too_long:
             if ARTIFIC_INTON and full_text and full_text[-1] not in TTS_END_PUNCT:
-                full_text += ","  # artificially add for better intonation in TTS
+                full_text += ","  # artificially comma add for better intonation in TTS - "continuation" not pause
 
             grouped_o = (self.tts_group_beg, self.tts_group_end, full_text)
             # queue_t0 = time.perf_counter()   # not using this anymore, using the grouped buffer start time instead to get the full picture of the latency
@@ -500,7 +500,7 @@ class ServerProcessor:
 
             else:
                 if TTS_GROUPING_ENABLED and self.tts_text_buffer and (now - self.last_text_received_time) > self.SILENCE_TIMEOUT:
-                    logger.info(f'\n\nSilence timeout of {self.SILENCE_TIMEOUT}s reached. Flushing buffer.\n\n')
+                    logger.info(f'\n\n\n[TIMEOUT FLUSH] Silence timeout of {self.SILENCE_TIMEOUT}s reached. Flushing buffer.\n\n\n')
                     self.flush_tts_group()
 
         if TTS_GROUPING_ENABLED:  # flush if leftover stuff left in tts buffer
@@ -612,10 +612,11 @@ class Server:
                     logger.debug("GENERATING TTS audio...")
                     tts_synth_t0 = time.perf_counter()
 
-                    # Artificially normalize text by adding periods to pauses in text so TTS better captures intonation
-                    if ARTIFIC_INTON:
-                        if text and text[-1] not in TTS_END_PUNCT:
-                            text += ","
+                    # Removed this because too blunt
+                    # # Artificially normalize text by adding periods to pauses in text so TTS better captures intonation
+                    # if ARTIFIC_INTON:
+                    #     if text and text[-1] not in TTS_END_PUNCT:
+                    #         text += ","
 
                     # wav = tts.tts(text)
                     wav = synthesize_text(text)

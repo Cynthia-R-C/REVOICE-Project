@@ -48,7 +48,7 @@ from config import Config  # settings
 from i18n import I18nAuto  # translation
 
 # Flags
-DEBUG = True
+DEBUG = False
 
 # So the i18n uses local relative paths to check for files in the package so gotta do this finnicky thing below
 # 1. Save current location (whisper_streaming)
