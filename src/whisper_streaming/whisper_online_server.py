@@ -97,8 +97,8 @@ MELO_SPEED = 0.8
 
 TTS_GROUPING_ENABLED = True
 ARTIFIC_INTON = True   # whether or not to normalize text groups with punctuation before TTS conversion
-TTS_MAX_WAIT_SEC = 1.2
-SILENCE_TIMEOUT = 0.7   # Seconds of silence before forcing flush
+TTS_MAX_WAIT_SEC = 0   # max seconds to stay in buffer; adds dash with this pause time
+SILENCE_TIMEOUT = 1.1   # Seconds of silence before forcing flush; adds period with this pause time
 TTS_END_PUNCT = '.?!,:;'
 
 
@@ -395,7 +395,7 @@ class ServerProcessor:
 
         if ends_cleanly or waited_too_long:
             if ARTIFIC_INTON and full_text and full_text[-1] not in TTS_END_PUNCT:
-                full_text += ","  # artificially comma add for better intonation in TTS - "continuation" not pause
+                full_text += "-"  # artificially comma add for better intonation in TTS - "continuation" not pause
 
             grouped_o = (self.tts_group_beg, self.tts_group_end, full_text)
             # queue_t0 = time.perf_counter()   # not using this anymore, using the grouped buffer start time instead to get the full picture of the latency
