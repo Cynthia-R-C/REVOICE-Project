@@ -71,8 +71,8 @@ STATS_PATH = f'test_results/{GROUP}/stats.txt'
 SAVE_TRANSCRIPT = True
 tts_flag = False  # becomes true when a TTS client connects to the server
 RVC_FLAG = True   # choose whether to enable RVC or not
-TXT_DESTUT = False # whether or not to do text destuttering
-AUD_DESTUT = False  # whether or not to do audio 
+TXT_DESTUT = True # whether or not to do text destuttering
+AUD_DESTUT = True  # whether or not to do audio 
 
 USE_COQUI = False
 USE_MELO = True
@@ -97,7 +97,7 @@ MELO_SPEED = 0.8
 
 TTS_GROUPING_ENABLED = True
 ARTIFIC_INTON = True   # whether or not to normalize text groups with punctuation before TTS conversion
-TTS_MAX_WAIT_SEC = 0   # max seconds to stay in buffer; adds dash with this pause time
+TTS_MAX_WAIT_SEC = 0.3   # max seconds to stay in buffer; adds dash with this pause time
 SILENCE_TIMEOUT = 1.1   # Seconds of silence before forcing flush; adds period with this pause time
 TTS_END_PUNCT = '.?!,:;'
 
