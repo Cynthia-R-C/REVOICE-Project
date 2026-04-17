@@ -1,0 +1,7 @@
+=== Calibration results (248 windows, 95th percentile) ===
+/p  — min=0.590  median=0.591  95th=0.591  max=0.591
+/b  — min=0.616  median=0.617  95th=0.617  max=0.619
+
+Recommended thresholds (set these in destutterer.py):
+  AUD_THRESH_P = 0.591
+  AUD_THRESH_B = 0.617
