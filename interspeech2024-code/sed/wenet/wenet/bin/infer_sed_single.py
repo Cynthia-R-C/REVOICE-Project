@@ -169,8 +169,8 @@ class StutterSED:
         # ======== Inference ======== #
 
         with torch.no_grad():
-            logits = self.model.decode(feats, feats_lengths)
-            probs = torch.sigmoid(logits).cpu().numpy().flatten()
+            # StutterNet.decode() already applies torch.sigmoid() internally, so the output is already in [0, 1]. Do NOT apply sigmoid here again
+            probs = self.model.decode(feats, feats_lengths).cpu().numpy().flatten()
 
             if self.thresh_path:  # if we wanna apply the thresholds
                 results = (probs > self.threshold.cpu().numpy().flatten()).astype(int)

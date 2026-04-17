@@ -6,6 +6,7 @@ import socket
 import torch   # for running on GPU
 from threading import Thread
 import queue  # for TTS text queue
+import collections  # for audio receive deque
 import librosa  # for resampling SR
 
 import sys
@@ -69,7 +70,7 @@ SAVE_TRANSCRIPT = True
 tts_flag = False  # becomes true when a TTS client connects to the server
 RVC_FLAG = True   # choose whether to enable RVC or not
 TXT_DESTUT = True # whether or not to do text destuttering
-AUD_DESTUT = False  # whether or not to do audio 
+AUD_DESTUT = True  # whether or not to do audio 
 SAVE_AUD_DESTUT_OUTPUT = True  # save post-audio-destutter audio to a wav for inspection
 
 USE_COQUI = False
@@ -254,7 +255,7 @@ class ServerProcessor:
         self.last_text_received_time = time.perf_counter()  # track when last text was received for auto buffer flushing after inactivity
         self.SILENCE_TIMEOUT = SILENCE_TIMEOUT  # Seconds of silence before forcing flush
 
-        # Latency: store per-chunk STT timestamps here until the group is flushed,at which point they are averaged into the LatencyRecord for that group
+        # Latency: store per-chunk STT timestamps here until the group is flushed, at which point they are averaged into the LatencyRecord for that group
         self.stt_synth_times = {}   # o[0] -> (stt_synth_start, stt_synth_end)
         self.stt_destut_times = {}  # o[0] -> (stt_destut_start, stt_destut_end)
         self.aud_destut_times = {}  # o[0] -> (aud_destut_start, aud_destut_end); keyed after STT runs
@@ -263,43 +264,61 @@ class ServerProcessor:
         # Accumulate post-audio-destutter chunks for saving to wav at session end
         self.aud_destut_chunks = []  # filled in receive_audio_chunk when SAVE_AUD_DESTUT_OUTPUT is on
 
+        # AUDIO RECEIVE THREAD
+        # Continuously drains the socket into this deque so audio is never dropped while process_iter() is blocking for 5-15s inside Whisper.
+        # Each entry = (raw_bytes, arrival_perf_counter)
+        self._audio_deque = collections.deque()
+        self._receive_thread_running = True
+        self._receive_thread = Thread(target=self._audio_receive_loop, daemon=True)
+        self._receive_thread.start()
+
+    def _audio_receive_loop(self):
+        '''Background thread: continuously drains raw bytes from the socket
+        into self._audio_deque so audio is never dropped while process_iter()
+        is blocking inside Whisper.'''
+        while self._receive_thread_running:
+            raw_bytes = self.connection.non_blocking_receive_audio()
+            if raw_bytes:
+                self._audio_deque.append((raw_bytes, time.perf_counter()))
+            else:
+                # Nothing available right now — small sleep to avoid busy-spin
+                time.sleep(0.005)
+
     def receive_audio_chunk(self):
         '''
-        receive all audio that is available by this time
-        blocks operation if less than self.min_chunk seconds is available
-        unblocks if connection is closed or a chunk is available
-
-        Note: modified to return not only all the audio that is available by this time but also a list of the start times for each
+        Assembles one processing chunk from the deque filled by _audio_receive_loop.
+        Blocks until at least min_chunk seconds of audio are available, or the
+        connection closes.
         '''
-        
         out = []
-        times = []  # a list of the times a chunk in the out list is received
+        times = []
+        minlimit = self.min_chunk * SAMPLING_RATE
 
-        minlimit = self.min_chunk*SAMPLING_RATE  # min samples
-        while sum(len(x) for x in out) < minlimit:  # keep receiving until it reaches min chunk size
-            raw_bytes = self.connection.non_blocking_receive_audio()
-            if not raw_bytes: # if empty
-                break
-#            print("received audio:",len(raw_bytes), "bytes", raw_bytes[:10])
-            sf = soundfile.SoundFile(io.BytesIO(raw_bytes), channels=1,endian="LITTLE",samplerate=SAMPLING_RATE, subtype="PCM_16",format="RAW")  # audio is in raw PCM 16
-            audio, _ = librosa.load(sf,sr=SAMPLING_RATE,dtype=np.float32)
-            out.append(audio)
-            times.append(time.perf_counter())  # append the start time of this audio to the times list
+        while sum(len(x) for x in out) < minlimit:
+            if self._audio_deque:
+                raw_bytes, arrival_time = self._audio_deque.popleft()
+                sf = soundfile.SoundFile(io.BytesIO(raw_bytes), channels=1, endian="LITTLE",
+                                         samplerate=SAMPLING_RATE, subtype="PCM_16", format="RAW")
+                audio, _ = librosa.load(sf, sr=SAMPLING_RATE, dtype=np.float32)
+                out.append(audio)
+                times.append(arrival_time)
+            else:
+                # Deque empty — either waiting for more audio or connection closed
+                if not self._receive_thread_running:
+                    break
+                time.sleep(0.005)
 
-        if not out:  # if no audio
+        if not out:
             return None, None
-        
+
         conc = np.concatenate(out)
 
-        if self.is_first and len(conc) < minlimit:  # can't be less than min limit
+        if self.is_first and len(conc) < minlimit:
             return None, None
-        
+
         self.is_first = False
 
         # ===== PRE-STT AUDIO DESTUTTERING (prolongations & blocks) ===== #
-        # Applied here so Whisper receives cleaner audio, improving transcription
-        # of stuttered speech. Times list is kept unchanged — the chunk may be
-        # slightly shorter after cutting but the arrival-time average is still valid.
         if AUD_DESTUT:
             aud_destut_t0 = time.perf_counter()
             conc = destutterer_stt.aud_destutter_chunk(conc)
@@ -311,7 +330,7 @@ class ServerProcessor:
         if SAVE_AUD_DESTUT_OUTPUT:
             self.aud_destut_chunks.append(conc.copy())
 
-        return conc, times   # returns the out list and the start times of each audio piece in the out list
+        return conc, times
 
     def format_output_transcript(self,o):
         '''
@@ -572,6 +591,9 @@ class ServerProcessor:
 
         if TTS_GROUPING_ENABLED:  # flush if leftover stuff left in tts buffer
             self.flush_tts_group()
+
+        # Stop the background audio receive thread
+        self._receive_thread_running = False
 
 #        o = online.finish()  # this should be working
 #        self.send_result(o)

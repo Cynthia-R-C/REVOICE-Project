@@ -32,8 +32,8 @@ MIN_REGION_DUR = 0.5
 # The thresholds.pt values were optimised for F-beta on the stutter eval set but produced too many false positives on fluent speech
 # Run calibrate_aud_thresholds() on known fluent audio to find good values then set them here
 # None = fall back to thresholds.pt values (not recommended).
-AUD_THRESH_P = 0.591   # e.g. 0.75 - set after running calibration
-AUD_THRESH_B = 0.617   # e.g. 0.80 - set after running calibration
+AUD_THRESH_P = 0.368   # e.g. 0.75 - set after running calibration
+AUD_THRESH_B = 0.479   # e.g. 0.80 - set after running calibration
 
 # Debug prints flag
 DEBUG = True
@@ -397,22 +397,35 @@ class Destutterer:
             print(f'wr_destutter for t from {self.beg_time} to {self.end_time} success')
 
     def i_destutter(self, stutter_word_idxs):
-        '''Destutter for /i'''
+        '''Destutter for /i.
+        Only removes a word if it is on the known interjection whitelist —
+        this prevents real content words from being deleted when the timing
+        estimate snaps to the wrong word.'''
+
+        # Canonical interjections and filler words that should be removed
+        INTERJECTION_WHITELIST = {
+            'um', 'uh', 'er', 'eh', 'ah', 'oh', 'hmm', 'hm', 'mhm',
+            'like', 'so', 'well', 'right', 'okay', 'ok', 'yeah', 'yes',
+            'no', 'actually', 'basically', 'literally', 'you', 'know',
+            'i', 'mean', 'just', 'kind', 'sort', 'thing', 'stuff',
+        }
+
         # For debug
         if DEBUG:
             popped_words = []
 
-        # Remove interjection word if it's detected
         if stutter_word_idxs.get('/i', None) is not None:
             idx = stutter_word_idxs['/i']
+            if idx < len(self.words):
+                word = self.words[idx].lower().strip(".,!?;:'\"")
+                if word in INTERJECTION_WHITELIST:
+                    if DEBUG:
+                        popped_words.append(self.words[idx])
+                    self.words.pop(idx)
+                    self.text = ' '.join(self.words)
+                elif DEBUG:
+                    print(f'i_destutter: skipping "{self.words[idx]}" — not in interjection whitelist')
 
-            if DEBUG:
-                popped_words.append(self.words[idx])
-
-            self.words.pop(idx)  # remove the interjection word
-            self.text = ' '.join(self.words)
-
-        # Debug prints
         if DEBUG:
             print(f'i_destutter for t from {self.beg_time} to {self.end_time} success; popped {popped_words}')            
 
@@ -683,4 +696,3 @@ def calibrate_aud_thresholds(destutterer, fluent_audio_path, percentile=95, hop_
     print(f'If miss real stutters, try a lower percentile\n')
 
     return thresh_p, thresh_b
-

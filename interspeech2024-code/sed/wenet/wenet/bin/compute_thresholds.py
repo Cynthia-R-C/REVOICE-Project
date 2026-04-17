@@ -136,6 +136,7 @@ def main():
                 pass
 
             logits = model.decode(feats, feats_lengths)
+            # StutterNet.decode() already applies torch.sigmoid() internally, so the output is already in [0, 1]. Do NOT apply sigmoid here again
             probs = logits.cpu().numpy()
             labels = target.cpu().numpy()
 
