@@ -61,6 +61,7 @@ GROUP = 'destut_fix'
 # TRIAL = '1'  #  will just have to manually rename the file as I test unless I wanna stop the server and restart it just to update the constant in file naming and that’s not worth it
 TRANSCRIPT_PATH = f'test_results/{GROUP}/transcript.txt'
 STATS_PATH = f'test_results/{GROUP}/stats.txt'
+AUD_DESTUT_OUTPUT_PATH = f'test_results/{GROUP}/aud_destut_output.wav'
 
 
 # ======= Other Toggles ======= #
@@ -69,6 +70,7 @@ tts_flag = False  # becomes true when a TTS client connects to the server
 RVC_FLAG = True   # choose whether to enable RVC or not
 TXT_DESTUT = True # whether or not to do text destuttering
 AUD_DESTUT = False  # whether or not to do audio 
+SAVE_AUD_DESTUT_OUTPUT = True  # save post-audio-destutter audio to a wav for inspection
 
 USE_COQUI = False
 USE_MELO = True
@@ -258,6 +260,9 @@ class ServerProcessor:
         self.aud_destut_times = {}  # o[0] -> (aud_destut_start, aud_destut_end); keyed after STT runs
         self._last_aud_destut_times = None  # temp holding slot until o[0] is known
 
+        # Accumulate post-audio-destutter chunks for saving to wav at session end
+        self.aud_destut_chunks = []  # filled in receive_audio_chunk when SAVE_AUD_DESTUT_OUTPUT is on
+
     def receive_audio_chunk(self):
         '''
         receive all audio that is available by this time
@@ -302,6 +307,9 @@ class ServerProcessor:
             self._last_aud_destut_times = (aud_destut_t0, aud_destut_t1)
         else:
             self._last_aud_destut_times = None
+
+        if SAVE_AUD_DESTUT_OUTPUT:
+            self.aud_destut_chunks.append(conc.copy())
 
         return conc, times   # returns the out list and the start times of each audio piece in the out list
 
@@ -838,147 +846,6 @@ class Server:
             logger.info("Connection to tts client closed")
 
 
-
-
-        # while True:
-        #     try:
-        #         # As long as queue is not empty, get text from queue, convert it to audio, and send it over
-        #         if not tts_queue.empty():
-        #             # for regular, queue contents = (o, buffer_start_t, chunk_start_perf), where o is regular (beg_stamp, end_stamp, txt)
-        #             # for grouped, queue contents = (grouped_o, buffer_start_t, group_start_perf), where o is (group_beg_stamp, group_end_stamp, full_grouped_txt)
-        #             (o, buffer_start_t, group_start_perf) = tts_queue.get()  # this should also remove it from the queue
-        #             queue_t1 = time.perf_counter()
-        #             buffer_and_queue_wait_ls.append(queue_t1 - buffer_start_t)  # add to list of times spent waiting in the queue
-        #             logger.info(f'[LATENCY] Total time in buffer & TTS queue: {queue_t1 - buffer_start_t:.3f}s')
-
-        #             logger.debug("o received from TTS queue.")
-
-        #             text = o[2]
-
-        #             # Generate speech
-        #             logger.debug("GENERATING TTS audio...")
-        #             tts_synth_t0 = time.perf_counter()
-
-        #             # Removed this because too blunt
-        #             # # Artificially normalize text by adding periods to pauses in text so TTS better captures intonation
-        #             # if ARTIFIC_INTON:
-        #             #     if text and text[-1] not in TTS_END_PUNCT:
-        #             #         text += ","
-
-        #             # wav = tts.tts(text)
-        #             wav = synthesize_text(text)
-        #             tts_synth_t1 = time.perf_counter()
-        #             logger.info(f'[LATENCY] TTS synthesis took {tts_synth_t1 - tts_synth_t0:.3f}s')
-        #             tts_synth_ls.append(tts_synth_t1 - tts_synth_t0)  # add to TTS synthesis latency list
-
-        #             logger.debug("TTS audio generated from text.")
-        #             wav = np.array(wav)   # convert to np array to avoid memory issues
-        #             #logger.debug("wav shape:", wav.shape, "dtype:", wav.dtype)
-
-        #             # Debugging
-        #             print(f"TTS output sample rate: {TTS_SR}")
-        #             print(f"Original wav shape: {wav.shape}, dtype: {wav.dtype}")
-        #             soundfile.write(f'original_{TTS_SR}hz.wav', wav, TTS_SR)  # Save original before resampling
-
-        #             # Resample to 16kHz if needed
-        #             if TTS_SR != SAMPLING_RATE:
-        #                 wav = librosa.resample(wav, orig_sr=TTS_SR, target_sr=SAMPLING_RATE)
-        #                 logger.debug(f"Resampled TTS audio from {TTS_SR}Hz to {SAMPLING_RATE}Hz.")
-
-        #                 # Debugging
-        #                 print(f"Resampled wav shape: {wav.shape}, dtype: {wav.dtype}")
-        #                 soundfile.write(f'resampled_{SAMPLING_RATE}hz.wav', wav, SAMPLING_RATE)  # Save after resampling
-
-                    
-        #             # ============== TTS DESTUTTERING LOGIC ================ #
-
-        #             if AUD_DESTUT:
-
-        #                 # Latency time tracker
-        #                 t0 = time.perf_counter()
-
-        #                 # TTS audio destuttering logic: prolongations & blocks
-
-        #                 t_to_buffer = base_online.buffer_time_offset  # time between global stream start and audio buffer start
-        #                 audio_buffer = base_online.audio_buffer  # current audio buffer - a list of samples
-        #                 beg_time = o[0]  # beg time of text (global)
-        #                 end_time = o[1]  # end time of text (global)
-
-        #                 p_times, b_times = destutterer_tts.get_destutter_info('tts', t_to_buffer, audio_buffer, beg_time, end_time, text)  # get segment times to cut
-
-        #                 ## PROLONGATION ##
-        #                 wav = destutterer_tts.p_destutter(wav, p_times[0], p_times[1])
-
-        #                 ## BLOCK ##
-        #                 wav = destutterer_tts.b_destutter(wav, b_times[0], b_times[1])
-
-        #                 # Print section latency
-        #                 t1 = time.perf_counter()
-        #                 logger.info(f'[LATENCY] TTS get_destutter_info took {t1 - t0:.3f}s')
-        #                 tts_destut_ls.append(t1 - t0)  # add to list of tts destuttering latencies
-
-
-        #             # ============== DESTUTTERING LOGIC END ================ #
-
-
-        #             # RVC logic (if flag enabled)
-        #             tr0 = time.perf_counter()
-        #             if RVC_FLAG:
-
-        #                 # Only use RVC if audio is long enough to be meaningful
-        #                 min_samples = 2000  # ~0.125s at 16kHz
-        #                 if wav.shape[0] >= min_samples:
-        #                     # Pass through RVC conversion
-        #                     logger.debug("[RVC] Passing TTS audio through RVC...")
-        #                     new_aud = rvc_converter.vc(wav)  # outputs 2D array, need to squeeze to 1D
-                            
-        #                     if new_aud.shape[0] == 0:
-        #                         # In case RVC returns empty because the audio < block frames and is too short (non-ideal), preserve original speech
-        #                         logger.warning("[RVC] RVC returned empty, preserving original.")
-        #                     else:
-        #                         wav = new_aud.squeeze(axis=1)  # squeeze to 1D
-        #                         logger.debug("[RVC] TTS audio processed through RVC.")
-        #                 else:
-        #                     logger.debug(f"[RVC] Skipping RVC for short audio ({wav.shape[0]} samples)")
-
-                    
-        #             tr1 = time.perf_counter()
-        #             logger.info(f'[LATENCY] RVC processing took {tr1 - tr0:.3f}s')
-        #             rvc_ls.append(tr1 - tr0)  # add to RVC latency list
-
-        #             # Convert to 16-bit PCM
-        #             wav_pcm = (wav * 32767).astype(np.int16)
-                    
-        #             # Record end time for latency
-        #             endTime = time.perf_counter()
-        #             # Now add latencies of that audio just then to latencies list
-        #             latencies.append(endTime - group_start_perf)
-
-        #             # Remove start time for this segment from the start_times dictionary
-        #             # But clean up only if that key exists in the dict
-        #             if o[0] in start_times:
-        #                 del start_times[o[0]]
-                   
-        #             # Send the packet of audio data
-        #             try:
-        #                 logger.debug("Sending audio to TTS client...")
-        #                 conn.sendall(wav_pcm.tobytes())
-        #                 logger.debug("Audio sent to TTS client.")
-        #             except (BrokenPipeError, ConnectionResetError):  # in case something goes wrong with the connection
-        #                 logger.info("broken pipe / connection reset -- connection closed?")
-        #                 break
-            
-        #     # To end the client connection from the terminal press Ctrl+C
-        #     except KeyboardInterrupt:
-        #         logger.info("TTS client handler stopping...")
-        #         break
-        
-        # conn.close()
-        # tts_flag = False  # set the TTS flag to false when the TTS client disconnects from the server
-        # Server.Clients.remove(client)  # remove client from client list
-        # logger.info('Connection to tts client closed')
-
-
     def handle_stt_client(self, client, tts_queue):
         '''Handles one STT client connection'''
         client_type = client['type']
@@ -998,6 +865,12 @@ class Server:
         conn.close()
         Server.Clients.remove(client)  # remove client from client list
         logger.info('Connection to stt client closed')
+
+        # Save post-audio-destutter audio for inspection
+        if SAVE_AUD_DESTUT_OUTPUT and proc.aud_destut_chunks:
+            all_audio = np.concatenate(proc.aud_destut_chunks)
+            soundfile.write(AUD_DESTUT_OUTPUT_PATH, all_audio, SAMPLING_RATE)
+            logger.info(f'Saved post-audio-destutter audio to {AUD_DESTUT_OUTPUT_PATH}')
 
         txt_wer = None
         if SAVE_TRANSCRIPT:
