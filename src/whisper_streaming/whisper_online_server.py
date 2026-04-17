@@ -220,9 +220,9 @@ class Connection:
     def non_blocking_receive_audio(self):
         try:
             r = self.conn.recv(self.PACKET_SIZE)
-            return r
-        except ConnectionResetError:
-            return None
+            return r  # b'' means clean disconnect; non-empty bytes = data
+        except (ConnectionResetError, ConnectionAbortedError, OSError):
+            raise  # let _audio_receive_loop handle it
 
 
 import io
@@ -275,13 +275,25 @@ class ServerProcessor:
     def _audio_receive_loop(self):
         '''Background thread: continuously drains raw bytes from the socket
         into self._audio_deque so audio is never dropped while process_iter()
-        is blocking inside Whisper.'''
+        is blocking inside Whisper.
+        Sets _receive_thread_running = False when the connection closes so
+        receive_audio_chunk() knows to stop waiting and return None.'''
         while self._receive_thread_running:
-            raw_bytes = self.connection.non_blocking_receive_audio()
+            try:
+                raw_bytes = self.connection.non_blocking_receive_audio()
+            except Exception:
+                # Any socket error = connection gone
+                self._receive_thread_running = False
+                break
+
             if raw_bytes:
                 self._audio_deque.append((raw_bytes, time.perf_counter()))
+            elif raw_bytes == b'' or raw_bytes is None:
+                # recv() returning empty bytes means the client closed the connection
+                self._receive_thread_running = False
+                break
             else:
-                # Nothing available right now — small sleep to avoid busy-spin
+                # Shouldn't happen, but treat as transient and retry
                 time.sleep(0.005)
 
     def receive_audio_chunk(self):
@@ -376,6 +388,7 @@ class ServerProcessor:
             if SAVE_TRANSCRIPT:
                 # Write the text to the output transcript file
                 self.out_file.write(o[2])
+                self.out_file.flush()  # flush immediately so partial transcripts survive crashes
 
     def flush_tts_group(self):
         '''Force any buffered grouped TTS text into the queue.'''
@@ -789,52 +802,54 @@ class Server:
                 except queue.Empty:
                     continue
 
-                # Stamp TTS queue exit
-                rec.tts_queue_exit = time.perf_counter()
-                logger.info(f'[LATENCY] Total time in buffer & TTS queue: {rec.buffer_and_queue_dur:.3f}s')
-
-                logger.debug("o received from TTS queue.")
-
-                text = o[2]
-
-                # Generate speech
-                logger.debug("GENERATING TTS audio...")
-                tts_synth_t0 = time.perf_counter()
-
-                # Removed this because too blunt
-                # # Artificially normalize text by adding periods to pauses in text so TTS better captures intonation
-                # if ARTIFIC_INTON:
-                #     if text and text[-1] not in TTS_END_PUNCT:
-                #         text += ","
-
-                # wav = tts.tts(text)
-                wav = synthesize_text(text)
-                tts_synth_t1 = time.perf_counter()
-                rec.tts_synth_start = tts_synth_t0
-                rec.tts_synth_end   = tts_synth_t1
-                logger.info(f'[LATENCY] TTS synthesis took {tts_synth_t1 - tts_synth_t0:.3f}s')
-
-                logger.debug("TTS audio generated from text.")
-                wav = np.array(wav)   # convert to np array to avoid memory issues
-
-                # Resample to 16kHz if needed
-                resample_t0 = time.perf_counter()
-                if TTS_SR != SAMPLING_RATE:
-                    wav = librosa.resample(wav, orig_sr=TTS_SR, target_sr=SAMPLING_RATE)
-                    logger.debug(f"Resampled TTS audio from {TTS_SR}Hz to {SAMPLING_RATE}Hz.")
-                resample_t1 = time.perf_counter()
-                rec.resample_start = resample_t0
-                rec.resample_end   = resample_t1
-                logger.info(f'[LATENCY] Resampling took {resample_t1 - resample_t0:.3f}s')
-
-                
-                # ============== DESTUTTERING LOGIC END ================ #
-                # (Audio destuttering for /p and /b now happens pre-STT in
-                #  receive_audio_chunk — see destutterer_stt.aud_destutter_chunk)
-
-
-                # RVC logic (if flag enabled)
+                # task_done must always be called once per get(), even if we break early,
+                # so that tts_queue.join() in handle_stt_client doesn't hang forever.
                 try:
+                    # Stamp TTS queue exit
+                    rec.tts_queue_exit = time.perf_counter()
+                    logger.info(f'[LATENCY] Total time in buffer & TTS queue: {rec.buffer_and_queue_dur:.3f}s')
+
+                    logger.debug("o received from TTS queue.")
+
+                    text = o[2]
+
+                    # Generate speech
+                    logger.debug("GENERATING TTS audio...")
+                    tts_synth_t0 = time.perf_counter()
+
+                    # Removed this because too blunt
+                    # # Artificially normalize text by adding periods to pauses in text so TTS better captures intonation
+                    # if ARTIFIC_INTON:
+                    #     if text and text[-1] not in TTS_END_PUNCT:
+                    #         text += ","
+
+                    # wav = tts.tts(text)
+                    wav = synthesize_text(text)
+                    tts_synth_t1 = time.perf_counter()
+                    rec.tts_synth_start = tts_synth_t0
+                    rec.tts_synth_end   = tts_synth_t1
+                    logger.info(f'[LATENCY] TTS synthesis took {tts_synth_t1 - tts_synth_t0:.3f}s')
+
+                    logger.debug("TTS audio generated from text.")
+                    wav = np.array(wav)   # convert to np array to avoid memory issues
+
+                    # Resample to 16kHz if needed
+                    resample_t0 = time.perf_counter()
+                    if TTS_SR != SAMPLING_RATE:
+                        wav = librosa.resample(wav, orig_sr=TTS_SR, target_sr=SAMPLING_RATE)
+                        logger.debug(f"Resampled TTS audio from {TTS_SR}Hz to {SAMPLING_RATE}Hz.")
+                    resample_t1 = time.perf_counter()
+                    rec.resample_start = resample_t0
+                    rec.resample_end   = resample_t1
+                    logger.info(f'[LATENCY] Resampling took {resample_t1 - resample_t0:.3f}s')
+
+                    
+                    # ============== DESTUTTERING LOGIC END ================ #
+                    # (Audio destuttering for /p and /b now happens pre-STT in
+                    #  receive_audio_chunk — see destutterer_stt.aud_destutter_chunk)
+
+
+                    # RVC logic (if flag enabled)
                     if RVC_FLAG:
                         # Only use RVC if audio is long enough to be meaningful
                         min_samples = 2000  # ~0.125s at 16kHz
@@ -848,14 +863,17 @@ class Server:
                     else:
                         # run cleanup and send
                         finalize_and_send(wav, rec)
-                
+
                 except (BrokenPipeError, ConnectionResetError):
                     logger.info("broken pipe / connection reset -- connection closed?")
-                    break
-                
-                self.tts_queue.task_done()
+                    # task_done still called in finally below before break takes effect
+                    raise  # re-raise to exit the outer while True via the except below
 
-        except KeyboardInterrupt:
+                finally:
+                    # Always mark this item done so tts_queue.join() never hangs
+                    self.tts_queue.task_done()
+
+        except (KeyboardInterrupt, BrokenPipeError, ConnectionResetError):
             logger.info("TTS client handler stopping...")
 
         finally:
@@ -888,26 +906,46 @@ class Server:
         Server.Clients.remove(client)  # remove client from client list
         logger.info('Connection to stt client closed')
 
+        # Wait for TTS queue (and by extension the RVC queue) to fully drain before
+        # reporting stats. Without this, in-flight TTS/RVC chunks haven't been added
+        # to the tracker yet and the stats file ends up empty.
+        logger.info('Waiting for TTS/RVC pipeline to finish draining...')
+        tts_queue.join()
+        logger.info('TTS queue drained.')
+
+        # Ensure output directories exist for all three output files
+        for _path in [AUD_DESTUT_OUTPUT_PATH, TRANSCRIPT_PATH, STATS_PATH]:
+            _dir = os.path.dirname(_path)
+            if _dir:
+                os.makedirs(_dir, exist_ok=True)
+
         # Save post-audio-destutter audio for inspection
         if SAVE_AUD_DESTUT_OUTPUT and proc.aud_destut_chunks:
-            all_audio = np.concatenate(proc.aud_destut_chunks)
-            soundfile.write(AUD_DESTUT_OUTPUT_PATH, all_audio, SAMPLING_RATE)
-            logger.info(f'Saved post-audio-destutter audio to {AUD_DESTUT_OUTPUT_PATH}')
+            try:
+                all_audio = np.concatenate(proc.aud_destut_chunks)
+                soundfile.write(AUD_DESTUT_OUTPUT_PATH, all_audio, SAMPLING_RATE)
+                logger.info(f'Saved post-audio-destutter audio to {AUD_DESTUT_OUTPUT_PATH}')
+            except Exception as e:
+                logger.error(f'Failed to save aud_destut_output: {e}')
 
         txt_wer = None
         if SAVE_TRANSCRIPT:
-            # transcription file WER calculation
-            out_file.close()
-            logger.info('Transcript file written.')
-            txt_wer = calc_wer(TRANSCRIPT_PATH, reference_file)
-            logger.info(f"WER: {txt_wer:.3f}")
+            try:
+                out_file.close()
+                logger.info('Transcript file written.')
+                txt_wer = calc_wer(TRANSCRIPT_PATH, reference_file)
+                logger.info(f"WER: {txt_wer:.3f}")
+            except Exception as e:
+                logger.error(f'Failed to close/score transcript: {e}')
 
         # Write WER to stats file first, then let tracker append latency stats
-        with open(STATS_PATH, 'w') as stats:
-            if txt_wer is not None:
-                stats.write(f"WER: {txt_wer:.3f}\n")
-
-        tracker.report_and_reset(stats_path=STATS_PATH)
+        try:
+            with open(STATS_PATH, 'w') as stats:
+                if txt_wer is not None:
+                    stats.write(f"WER: {txt_wer:.3f}\n")
+            tracker.report_and_reset(stats_path=STATS_PATH)
+        except Exception as e:
+            logger.error(f'Failed to write stats: {e}')
 
 
 
