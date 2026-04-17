@@ -88,7 +88,8 @@ class Destutterer:
         chunk_len = len(audio_chunk)
 
         # Need at least one hop worth of audio to do anything
-        hop_samples = int(0.25 * self.sr)
+        hop_samples = int(0.5 * self.sr)   # 0.5s hop — halves inference calls vs original 0.25s;
+                                            # real prolongations/blocks last >0.5s so resolution is fine
         if chunk_len < hop_samples:
             return audio_chunk
 
@@ -159,7 +160,7 @@ class Destutterer:
         self.words = text.split() # list of words in text segment
 
         # Sliding 3s window over audio corresponding to text segment
-        hop = 0.25 * self.sr   # could increase this if latency is too high
+        hop = 0.5 * self.sr   # could increase this if latency is too high
         window_size = 3.0 * self.sr  # 3s window; window size in samples
         loc_start = (self.beg_time - self.t_to_buffer) * self.sr  # buffer local
         loc_end = (self.end_time - self.t_to_buffer) * self.sr  # buffer local

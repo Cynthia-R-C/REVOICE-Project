@@ -58,7 +58,7 @@ def get_base_online():
 
 
 # ======= Testing ======= #
-GROUP = 'destut_fix'
+GROUP = 'latency_testing_2'
 # TRIAL = '1'  #  will just have to manually rename the file as I test unless I wanna stop the server and restart it just to update the constant in file naming and that’s not worth it
 TRANSCRIPT_PATH = f'test_results/{GROUP}/transcript.txt'
 STATS_PATH = f'test_results/{GROUP}/stats.txt'
@@ -272,12 +272,18 @@ class ServerProcessor:
         self._receive_thread = Thread(target=self._audio_receive_loop, daemon=True)
         self._receive_thread.start()
 
+        # AUDIO DESTUTTER THREAD
+        # Runs aud_destutter_chunk (slow StutterNet inference) off the main thread
+        # so Whisper and destuttering run in parallel.
+        # Each entry in _processed_queue = (conc_float32, times_list, aud_destut_times_or_None)
+        # None sentinel signals end of stream.
+        self._processed_queue = queue.Queue()
+        self._destutter_thread = Thread(target=self._destutter_loop, daemon=True)
+        self._destutter_thread.start()
+
     def _audio_receive_loop(self):
-        '''Background thread: continuously drains raw bytes from the socket
-        into self._audio_deque so audio is never dropped while process_iter()
-        is blocking inside Whisper.
-        Sets _receive_thread_running = False when the connection closes so
-        receive_audio_chunk() knows to stop waiting and return None.'''
+        '''Background thread: continuously drains raw bytes from the socket into self._audio_deque so audio is never dropped while process_iter() is blocking inside Whisper 
+        Sets _receive_thread_running = False when the connection closes so receive_audio_chunk() knows to stop waiting and return None'''
         while self._receive_thread_running:
             try:
                 raw_bytes = self.connection.non_blocking_receive_audio()
@@ -296,52 +302,65 @@ class ServerProcessor:
                 # Shouldn't happen, but treat as transient and retry
                 time.sleep(0.005)
 
-    def receive_audio_chunk(self):
-        '''
-        Assembles one processing chunk from the deque filled by _audio_receive_loop.
-        Blocks until at least min_chunk seconds of audio are available, or the
-        connection closes.
-        '''
-        out = []
-        times = []
+    def _destutter_loop(self):
+        '''Background thread: assembles min_chunk-sized pieces from _audio_deque, runs aud_destutter_chunk (the slow StutterNet step) here off the main thread, then puts the processed result into _processed_queue for Whisper to use
+        This lets Whisper and destuttering run in parallel'''
         minlimit = self.min_chunk * SAMPLING_RATE
+        is_first_local = True
 
-        while sum(len(x) for x in out) < minlimit:
-            if self._audio_deque:
-                raw_bytes, arrival_time = self._audio_deque.popleft()
-                sf = soundfile.SoundFile(io.BytesIO(raw_bytes), channels=1, endian="LITTLE",
-                                         samplerate=SAMPLING_RATE, subtype="PCM_16", format="RAW")
-                audio, _ = librosa.load(sf, sr=SAMPLING_RATE, dtype=np.float32)
-                out.append(audio)
-                times.append(arrival_time)
-            else:
-                # Deque empty — either waiting for more audio or connection closed
-                if not self._receive_thread_running:
-                    break
-                time.sleep(0.005)
+        while True:
+            out = []
+            times = []
 
-        if not out:
+            # Accumulate enough raw bytes for one Whisper chunk
+            while sum(len(x) for x in out) < minlimit:
+                if self._audio_deque:
+                    raw_bytes, arrival = self._audio_deque.popleft()
+                    sf = soundfile.SoundFile(io.BytesIO(raw_bytes), channels=1,
+                                             endian="LITTLE", samplerate=SAMPLING_RATE,
+                                             subtype="PCM_16", format="RAW")
+                    audio, _ = librosa.load(sf, sr=SAMPLING_RATE, dtype=np.float32)
+                    out.append(audio)
+                    times.append(arrival)
+                else:
+                    if not self._receive_thread_running:
+                        break  # connection closed, drain whatever is left then exit
+                    time.sleep(0.005)
+
+            if not out:
+                # Nothing left and connection is closed — send sentinel and exit
+                self._processed_queue.put(None)
+                break
+
+            conc = np.concatenate(out)
+
+            if is_first_local and len(conc) < minlimit:
+                # Discard under-sized first chunk (matches old is_first logic)
+                continue
+            is_first_local = False
+
+            # ===== AUDIO DESTUTTERING runs here, off the main thread ===== #
+            aud_times = None
+            if AUD_DESTUT:
+                t0 = time.perf_counter()
+                conc = destutterer_stt.aud_destutter_chunk(conc)
+                t1 = time.perf_counter()
+                aud_times = (t0, t1)
+
+            if SAVE_AUD_DESTUT_OUTPUT:
+                self.aud_destut_chunks.append(conc.copy())
+
+            self._processed_queue.put((conc, times, aud_times))
+
+    def receive_audio_chunk(self):
+        '''Pulls the next processed chunk from _processed_queue
+        Blocks until a chunk is ready or the connection closes (sentinel None)
+        Heavy lifting (socket decode + destuttering) happens in background threads, so this returns quickly'''
+        item = self._processed_queue.get()
+        if item is None:
             return None, None
-
-        conc = np.concatenate(out)
-
-        if self.is_first and len(conc) < minlimit:
-            return None, None
-
-        self.is_first = False
-
-        # ===== PRE-STT AUDIO DESTUTTERING (prolongations & blocks) ===== #
-        if AUD_DESTUT:
-            aud_destut_t0 = time.perf_counter()
-            conc = destutterer_stt.aud_destutter_chunk(conc)
-            aud_destut_t1 = time.perf_counter()
-            self._last_aud_destut_times = (aud_destut_t0, aud_destut_t1)
-        else:
-            self._last_aud_destut_times = None
-
-        if SAVE_AUD_DESTUT_OUTPUT:
-            self.aud_destut_chunks.append(conc.copy())
-
+        conc, times, aud_times = item
+        self._last_aud_destut_times = aud_times
         return conc, times
 
     def format_output_transcript(self,o):
@@ -605,8 +624,10 @@ class ServerProcessor:
         if TTS_GROUPING_ENABLED:  # flush if leftover stuff left in tts buffer
             self.flush_tts_group()
 
-        # Stop the background audio receive thread
+        # Stop background threads
         self._receive_thread_running = False
+        # _destutter_loop will exit on its own once the deque is drained and
+        # _receive_thread_running is False; it sends a None sentinel to _processed_queue.
 
 #        o = online.finish()  # this should be working
 #        self.send_result(o)
