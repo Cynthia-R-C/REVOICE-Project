@@ -87,6 +87,10 @@ class LatencyRecord:
     tts_synth_start: Optional[float] = None
     tts_synth_end: Optional[float] = None
 
+    # Resampling (between TTS synth and TTS destutter / RVC)
+    resample_start: Optional[float] = None
+    resample_end: Optional[float] = None
+
     # TTS destutter (optional)
     tts_destut_start: Optional[float] = None
     tts_destut_end: Optional[float] = None
@@ -129,6 +133,10 @@ class LatencyRecord:
     def tts_queue_only_dur(self) -> Optional[float]:
         '''Time spent sitting in the tts_queue specifically (not the buffer).'''
         return self._dur(self.tts_queue_enter, self.tts_queue_exit)
+
+    @property
+    def resample_dur(self) -> Optional[float]:
+        return self._dur(self.resample_start, self.resample_end)
 
     @property
     def tts_synth_dur(self) -> Optional[float]:
@@ -231,6 +239,7 @@ class LatencyTracker:
             f"Average buffer + TTS queue wait:       {self._fmt(avg_of('buffer_and_queue_dur'))}",
             f"Average TTS queue wait (only):         {self._fmt(avg_of('tts_queue_only_dur'))}",
             f"Average TTS synthesis latency:         {self._fmt(avg_of('tts_synth_dur'))}",
+            f"Average resampling latency:            {self._fmt(avg_of('resample_dur'))}",
             f"Average TTS destutter latency:         {self._fmt(avg_of('tts_destut_dur'))}",
             f"Average RVC queue idle wait:           {self._fmt(avg_of('rvc_queue_wait_dur'))}",
             f"Average RVC processing latency:        {self._fmt(avg_of('rvc_dur'))}",

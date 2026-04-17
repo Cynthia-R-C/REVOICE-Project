@@ -764,21 +764,16 @@ class Server:
 
                 logger.debug("TTS audio generated from text.")
                 wav = np.array(wav)   # convert to np array to avoid memory issues
-                #logger.debug("wav shape:", wav.shape, "dtype:", wav.dtype)
-
-                # Debugging
-                print(f"TTS output sample rate: {TTS_SR}")
-                print(f"Original wav shape: {wav.shape}, dtype: {wav.dtype}")
-                soundfile.write(f'original_{TTS_SR}hz.wav', wav, TTS_SR)  # Save original before resampling
 
                 # Resample to 16kHz if needed
+                resample_t0 = time.perf_counter()
                 if TTS_SR != SAMPLING_RATE:
                     wav = librosa.resample(wav, orig_sr=TTS_SR, target_sr=SAMPLING_RATE)
                     logger.debug(f"Resampled TTS audio from {TTS_SR}Hz to {SAMPLING_RATE}Hz.")
-
-                    # Debugging
-                    print(f"Resampled wav shape: {wav.shape}, dtype: {wav.dtype}")
-                    soundfile.write(f'resampled_{SAMPLING_RATE}hz.wav', wav, SAMPLING_RATE)  # Save after resampling
+                resample_t1 = time.perf_counter()
+                rec.resample_start = resample_t0
+                rec.resample_end   = resample_t1
+                logger.info(f'[LATENCY] Resampling took {resample_t1 - resample_t0:.3f}s')
 
                 
                 # ============== TTS DESTUTTERING LOGIC ================ #
