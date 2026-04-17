@@ -57,7 +57,7 @@ def get_base_online():
 
 
 # ======= Testing ======= #
-GROUP = 'latency_testing'
+GROUP = 'destut_fix'
 # TRIAL = '1'  #  will just have to manually rename the file as I test unless I wanna stop the server and restart it just to update the constant in file naming and that’s not worth it
 TRANSCRIPT_PATH = f'test_results/{GROUP}/transcript.txt'
 STATS_PATH = f'test_results/{GROUP}/stats.txt'
