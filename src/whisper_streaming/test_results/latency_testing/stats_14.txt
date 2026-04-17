@@ -1,0 +1,8 @@
+WER: 0.038
+Average latency: 4.906s
+Average STT synthesis latency: 0.601s
+Average TTS synthesis latency: 1.068s
+Average time spent waiting in buffer & TTS queue: 1.839s
+Average STT destuttering latency: 0.000s
+Average TTS destuttering latency: 0.000s
+Average RVC latency: 0.858s
