@@ -260,6 +260,8 @@ class ServerProcessor:
         self.stt_destut_times = {}  # o[0] -> (stt_destut_start, stt_destut_end)
         self.aud_destut_times = {}  # o[0] -> (aud_destut_start, aud_destut_end); keyed after STT runs
         self._last_aud_destut_times = None  # temp holding slot until o[0] is known
+        self.processed_queue_times = {}   # o[0] -> (pq_enter, pq_exit)
+        self._last_processed_queue_times = None  # temp holding slot until o[0] is known
 
         # Accumulate post-audio-destutter chunks for saving to wav at session end
         self.aud_destut_chunks = []  # filled in receive_audio_chunk when SAVE_AUD_DESTUT_OUTPUT is on
@@ -273,17 +275,35 @@ class ServerProcessor:
         self._receive_thread.start()
 
         # AUDIO DESTUTTER THREAD
-        # Runs aud_destutter_chunk (slow StutterNet inference) off the main thread
-        # so Whisper and destuttering run in parallel.
-        # Each entry in _processed_queue = (conc_float32, times_list, aud_destut_times_or_None)
+        # Assembles chunks from _audio_deque, runs aud_destutter_chunk off the main
+        # thread, and puts processed results into _processed_queue.
+        # Each entry = (conc, times, aud_times, pq_enter_time)
         # None sentinel signals end of stream.
         self._processed_queue = queue.Queue()
+        self._last_processed_queue_times = None  # (pq_enter, pq_exit) held until o[0] known
         self._destutter_thread = Thread(target=self._destutter_loop, daemon=True)
         self._destutter_thread.start()
 
+        # TTS BUFFER FLUSH
+        self._flush_timer_thread = Thread(target=self._tts_flush_timer_loop, daemon=True)
+        self._flush_timer_thread.start()
+
+    def _tts_flush_timer_loop(self):
+        '''Background thread: fires flush_tts_group() as soon as TTS_MAX_WAIT_SEC has elapsed since the buffer started filling, independently of whether new STT text has arrived. Preserves all prosody logic'''
+        while self._receive_thread_running:
+            time.sleep(0.05)  # check every 50ms — fine-grained enough, cheap enough
+            if (self.tts_text_buffer
+                    and self.tts_buffer_start_time is not None
+                    and (time.perf_counter() - self.tts_buffer_start_time) >= TTS_MAX_WAIT_SEC):
+                logger.info(f'[TIMER FLUSH] TTS_MAX_WAIT_SEC elapsed, flushing.')
+                self.flush_tts_group()
+
     def _audio_receive_loop(self):
-        '''Background thread: continuously drains raw bytes from the socket into self._audio_deque so audio is never dropped while process_iter() is blocking inside Whisper 
-        Sets _receive_thread_running = False when the connection closes so receive_audio_chunk() knows to stop waiting and return None'''
+        '''Background thread: continuously drains raw bytes from the socket
+        into self._audio_deque so audio is never dropped while process_iter()
+        is blocking inside Whisper.
+        Sets _receive_thread_running = False when the connection closes so
+        receive_audio_chunk() knows to stop waiting and return None.'''
         while self._receive_thread_running:
             try:
                 raw_bytes = self.connection.non_blocking_receive_audio()
@@ -303,8 +323,10 @@ class ServerProcessor:
                 time.sleep(0.005)
 
     def _destutter_loop(self):
-        '''Background thread: assembles min_chunk-sized pieces from _audio_deque, runs aud_destutter_chunk (the slow StutterNet step) here off the main thread, then puts the processed result into _processed_queue for Whisper to use
-        This lets Whisper and destuttering run in parallel'''
+        '''Background thread: assembles min_chunk-sized pieces from _audio_deque, runs aud_destutter_chunk (slow StutterNet) here off the main thread, then puts results into _processed_queue
+        Whisper and destuttering now run in parallel 
+        
+        When the queue is backed up, merges new chunks into the oldest waiting item so Whisper still hears all audio, just in larger batches'''
         minlimit = self.min_chunk * SAMPLING_RATE
         is_first_local = True
 
@@ -312,36 +334,35 @@ class ServerProcessor:
             out = []
             times = []
 
-            # Accumulate enough raw bytes for one Whisper chunk
             while sum(len(x) for x in out) < minlimit:
                 if self._audio_deque:
                     raw_bytes, arrival = self._audio_deque.popleft()
                     sf = soundfile.SoundFile(io.BytesIO(raw_bytes), channels=1,
-                                             endian="LITTLE", samplerate=SAMPLING_RATE,
-                                             subtype="PCM_16", format="RAW")
+                                            endian="LITTLE", samplerate=SAMPLING_RATE,
+                                            subtype="PCM_16", format="RAW")
                     audio, _ = librosa.load(sf, sr=SAMPLING_RATE, dtype=np.float32)
                     out.append(audio)
                     times.append(arrival)
                 else:
                     if not self._receive_thread_running:
-                        break  # connection closed, drain whatever is left then exit
+                        break
                     time.sleep(0.005)
 
             if not out:
-                # Nothing left and connection is closed — send sentinel and exit
                 self._processed_queue.put(None)
                 break
 
             conc = np.concatenate(out)
 
             if is_first_local and len(conc) < minlimit:
-                # Discard under-sized first chunk (matches old is_first logic)
                 continue
             is_first_local = False
 
-            # ===== AUDIO DESTUTTERING runs here, off the main thread ===== #
+            # Audio destuttering runs HERE, off the main thread.
+            # Skip if Whisper is already backed up — no point burning GPU on
+            # audio that will just sit in the queue, and it frees CUDA for Whisper.
             aud_times = None
-            if AUD_DESTUT:
+            if AUD_DESTUT and self._processed_queue.qsize() == 0:
                 t0 = time.perf_counter()
                 conc = destutterer_stt.aud_destutter_chunk(conc)
                 t1 = time.perf_counter()
@@ -350,18 +371,39 @@ class ServerProcessor:
             if SAVE_AUD_DESTUT_OUTPUT:
                 self.aud_destut_chunks.append(conc.copy())
 
-            self._processed_queue.put((conc, times, aud_times))
+            pq_enter = time.perf_counter()
+            new_item = (conc, times, aud_times, pq_enter)
+
+            # If the queue is backed up, merge this chunk into the oldest waiting item rather than letting the queue grow unboundedly
+            # Whisper still hears all audio, just in a larger batch
+            if self._processed_queue.qsize() >= 2:
+                try:
+                    old_conc, old_times, old_aud_times, old_pq_enter = self._processed_queue.get_nowait()
+                    merged_conc = np.concatenate([old_conc, conc])
+                    merged_times = old_times + times  # preserve all arrival timestamps
+                    # Keep the older pq_enter and aud_times so latency records
+                    # reflect when this group first entered the queue
+                    self._processed_queue.put_nowait((merged_conc, merged_times, old_aud_times, old_pq_enter))
+                    logger.warning("[BACKPRESSURE] Merged chunk into queue — Whisper falling behind")
+                except queue.Empty:
+                    # Race condition: queue drained between qsize() check and get()
+                    # Just push normally
+                    self._processed_queue.put(new_item)
+            else:
+                self._processed_queue.put(new_item)
 
     def receive_audio_chunk(self):
-        '''Pulls the next processed chunk from _processed_queue
-        Blocks until a chunk is ready or the connection closes (sentinel None)
-        Heavy lifting (socket decode + destuttering) happens in background threads, so this returns quickly'''
+        '''Pulls the next processed chunk from _processed_queue.
+        Near-instant — all the heavy work happens in the background threads.'''
         item = self._processed_queue.get()
         if item is None:
             return None, None
-        conc, times, aud_times = item
+        conc, times, aud_times, pq_enter = item
+        pq_exit = time.perf_counter()
         self._last_aud_destut_times = aud_times
+        self._last_processed_queue_times = (pq_enter, pq_exit)
         return conc, times
+
 
     def format_output_transcript(self,o):
         '''
@@ -452,6 +494,8 @@ class ServerProcessor:
         stt_destut_ends = [self.stt_destut_times[cid][1] for cid in ids if cid in self.stt_destut_times]
         aud_destut_starts = [self.aud_destut_times[cid][0] for cid in ids if cid in self.aud_destut_times]
         aud_destut_ends   = [self.aud_destut_times[cid][1] for cid in ids if cid in self.aud_destut_times]
+        pq_enters = [self.processed_queue_times[cid][0] for cid in ids if cid in self.processed_queue_times]
+        pq_exits  = [self.processed_queue_times[cid][1] for cid in ids if cid in self.processed_queue_times]
 
         # Add to latency record obj
         rec = LatencyRecord(
@@ -465,6 +509,8 @@ class ServerProcessor:
             stt_destut_end = sum(stt_destut_ends) / len(stt_destut_ends) if stt_destut_ends else None,
             aud_destut_start = sum(aud_destut_starts) / len(aud_destut_starts) if aud_destut_starts else None,
             aud_destut_end   = sum(aud_destut_ends)   / len(aud_destut_ends)   if aud_destut_ends   else None,
+            processed_queue_enter = sum(pq_enters) / len(pq_enters) if pq_enters else None,
+            processed_queue_exit  = sum(pq_exits)  / len(pq_exits)  if pq_exits  else None,
         )
 
         # Clean up the per-chunk dicts to avoid unbounded growth
@@ -472,6 +518,7 @@ class ServerProcessor:
             self.stt_synth_times.pop(cid, None)
             self.stt_destut_times.pop(cid, None)
             self.aud_destut_times.pop(cid, None)
+            self.processed_queue_times.pop(cid, None)
 
         return rec
 
@@ -558,7 +605,12 @@ class ServerProcessor:
                 # Now that we have o[0], key the pre-STT audio destutter times too
                 if self._last_aud_destut_times is not None:
                     self.aud_destut_times[o[0]] = self._last_aud_destut_times
-                    self._last_aud_destut_times = None  # consume it
+                    self._last_aud_destut_times = None
+
+                # Key the processed queue wait times too
+                if self._last_processed_queue_times is not None:
+                    self.processed_queue_times[o[0]] = self._last_processed_queue_times
+                    self._last_processed_queue_times = None
 
                 # Find average start time perf counter and add to global tuple with ID
                 avg_start_time = calc_avg(startTimes)
@@ -624,10 +676,9 @@ class ServerProcessor:
         if TTS_GROUPING_ENABLED:  # flush if leftover stuff left in tts buffer
             self.flush_tts_group()
 
-        # Stop background threads
+        # Stop background threads — _destutter_loop will drain the deque then
+        # send a None sentinel to _processed_queue automatically
         self._receive_thread_running = False
-        # _destutter_loop will exit on its own once the deque is drained and
-        # _receive_thread_running is False; it sends a None sentinel to _processed_queue.
 
 #        o = online.finish()  # this should be working
 #        self.send_result(o)
@@ -1000,15 +1051,3 @@ if __name__ == '__main__':
 #         proc.process()
 #         conn.close()
 #         logger.info('Connection to client closed')
-
-#         # transcription file WER calculation
-#         out_file.close()
-#         logger.info('Transcript file written.')
-#         txt_wer = calc_wer('mrs_dalloway.txt', 'transcript.txt')
-#         logger.info(f"WER: {txt_wer:.3f}")
-
-#         # Latency calculation
-#         logger.info(f"Average latency: {calc_avg_latency(latencies):.3f}s")
-#         latencies = []   # clear latencies list for next client session
-
-# logger.info('Connection closed, terminating.')

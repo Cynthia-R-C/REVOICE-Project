@@ -82,6 +82,10 @@ class LatencyRecord:
     aud_destut_start: Optional[float] = None
     aud_destut_end: Optional[float] = None
 
+    # Time chunk spent waiting in _processed_queue for Whisper to be ready
+    processed_queue_enter: Optional[float] = None   # when chunk was put into _processed_queue
+    processed_queue_exit: Optional[float] = None   # when receive_audio_chunk() pulled it out
+
     # buffer + queue
     buffer_enter: Optional[float] = None   # when text first entered the grouping buffer
     tts_queue_enter: Optional[float] = None   # just before tts_queue.put()
@@ -125,6 +129,14 @@ class LatencyRecord:
     @property
     def aud_destut_dur(self) -> Optional[float]:
         return self._dur(self.aud_destut_start, self.aud_destut_end)
+
+    @property
+    def processed_queue_wait_dur(self) -> Optional[float]:
+        '''Time the chunk sat in _processed_queue waiting for Whisper to be free.
+        This is the main source of latency in the parallel destutter pipeline —
+        the destutter thread produces chunks faster than Whisper consumes them,
+        so chunks queue up.'''
+        return self._dur(self.processed_queue_enter, self.processed_queue_exit)
 
     @property
     def buffer_and_queue_dur(self) -> Optional[float]:
@@ -237,6 +249,7 @@ class LatencyTracker:
         lines = [
             f"Average end-to-end latency:            {self._fmt(avg_of('end_to_end'))}",
             f"Average audio destutter latency:       {self._fmt(avg_of('aud_destut_dur'))}",
+            f"Average processed queue wait:          {self._fmt(avg_of('processed_queue_wait_dur'))}",
             f"Average STT synthesis latency:         {self._fmt(avg_of('stt_synth_dur'))}",
             f"Average STT destutter latency:         {self._fmt(avg_of('stt_destut_dur'))}",
             f"Average buffer + TTS queue wait:       {self._fmt(avg_of('buffer_and_queue_dur'))}",
