@@ -27,6 +27,9 @@ start_times = {}  # dict of average start time of current text segment
 from latency_tracking import LatencyRecord, LatencyTracker
 tracker = LatencyTracker()
 
+from latency_tracking import LatencyRecord, LatencyTracker
+tracker = LatencyTracker()
+
 
 # ======= DESTUTTERING IMPORTS/CONSTANTS ======= #
 import sys
@@ -253,6 +256,8 @@ class ServerProcessor:
         self.tts_group_start_perf = None       # perf_counter corresponding to first chunk's arrival
         self.tts_buffer_ids = []               # o[0] keys of every chunk added to the current group
 
+        self.tts_buffer_ids = []               # o[0] keys of every chunk added to the current group
+
         self.last_text_received_time = time.perf_counter()  # track when last text was received for auto buffer flushing after inactivity
         self.SILENCE_TIMEOUT = SILENCE_TIMEOUT  # Seconds of silence before forcing flush
 
@@ -469,6 +474,9 @@ class ServerProcessor:
 
         rec = self._make_latency_record()
         self.tts_queue.put((grouped_o, rec))
+
+        rec = self._make_latency_record()
+        self.tts_queue.put((grouped_o, rec))
         logger.info(f'\n\n\n[FLUSH] Flushed final TTS grouped chunk: {full_text!r}\n\n\n')
 
         # Reset all the necessary stuff
@@ -539,6 +547,7 @@ class ServerProcessor:
         self.tts_group_end = o[1]
         self.tts_text_buffer.append(text)
         self.tts_buffer_ids.append(o[0])
+        self.tts_buffer_ids.append(o[0])
 
         full_text = " ".join(self.tts_text_buffer).strip()  # add to text buffer
         word_count = len(full_text.split())
@@ -556,6 +565,9 @@ class ServerProcessor:
             # Create LatencyRecord obj for this group using STT times
             rec = self._make_latency_record()
             self.tts_queue.put((grouped_o, rec))
+            # Create LatencyRecord obj for this group using STT times
+            rec = self._make_latency_record()
+            self.tts_queue.put((grouped_o, rec))
             logger.info(f'TTS grouped chunk queued: {full_text!r}')
 
             self.tts_text_buffer = []
@@ -563,6 +575,7 @@ class ServerProcessor:
             self.tts_group_beg = None
             self.tts_group_end = None
             self.tts_group_start_perf = None
+            self.tts_buffer_ids = []
             self.tts_buffer_ids = []
 
 
@@ -649,6 +662,7 @@ class ServerProcessor:
                     t1 = time.perf_counter()
                     logger.info(f"[LATENCY] STT get_destutter_info took {t1 - t0:.3f}s")
                     self.stt_destut_times[o[0]] = (t0, t1)
+                    self.stt_destut_times[o[0]] = (t0, t1)
 
 
                 # ============== END DESTUTTERING LOGIC ================ #
@@ -733,6 +747,7 @@ class Server:
         '''Initializes TCP socket over IPv4. Accepts 2 connections max.'''
         self.tts_queue = queue.Queue()  # queue for STT o to be sent to TTS client
         self.rvc_queue = queue.Queue()  # queue for TTS audio to be sent to RVC if RVC_FLAG is on
+        self.rvc_queue = queue.Queue()  # queue for TTS audio to be sent to RVC if RVC_FLAG is on
         self.socket = sock
         self.socket.bind((HOST, PORT))
         self.socket.listen(2)  # allow 2 clients to wait in line
@@ -780,13 +795,112 @@ class Server:
             logger.error(f"Warmup failed: {e}")
 
 
+
+    def warmup_models(self, rvc_queue_obj):
+        '''Sends first signal to warm up TTS and RVC models (STT already warms itself up)'''
+        logger.info("Warming up TTS and RVC models...")
+        
+        # Warm up TTS
+        warmup_text = 'Warmup'
+        try:
+            wav = synthesize_text(warmup_text)
+            wav = np.array(wav)
+            
+            # Warm up RVC
+            if RVC_FLAG:
+                # Pass a dummy rec with chunk_id warmup so finalize_and_send knows to ignore it
+                dummy_rec = LatencyRecord(chunk_id='warmup', group_start_perf=time.perf_counter())
+                rvc_queue_obj.put((wav, dummy_rec))
+                
+        except Exception as e:
+            logger.error(f"Warmup failed: {e}")
+
+
     def handle_tts_client(self, client, tts_queue):
+        '''Handles one TTS client connection
+        Manages the TTS pipeline with optional parallel RVC processing'''
         '''Handles one TTS client connection
         Manages the TTS pipeline with optional parallel RVC processing'''
         tts_flag = True  # set the TTS flag to true when a TTS client connects to the server
         #client_type = client['type']
         conn = client['conn/socket']
 
+        print("TTS client connected.")
+        
+        # Helper for cleanup and sending code
+        def finalize_and_send(wav, rec):
+            '''Helper for cleanup and sending code + records overall latency'''
+
+            # If this is warmup data, just exit early
+            if rec is None or rec.chunk_id == 'warmup':
+                logger.info("Warmup chunk processed successfully.")
+                return
+
+            # Convert to 16-bit PCM
+            wav_pcm = (wav * 32767).astype(np.int16)
+
+            # Stamp the moment audio is sent and hand record to tracker
+            rec.audio_sent = time.perf_counter()
+            tracker.add(rec)
+
+            # Remove start time for this segment from the start_times dictionary
+            # But clean up only if that key exists in the dict
+            if rec.chunk_id in start_times:
+                del start_times[rec.chunk_id]
+           
+            # Send the packet of audio data
+            logger.debug("Sending audio to TTS client...")
+            conn.sendall(wav_pcm.tobytes())
+            logger.debug("Audio sent to TTS client.")
+       
+
+        # RVC parallel thread
+        def rvc_worker_loop():
+            try:
+                while True:
+                    item = self.rvc_queue.get()
+                    if item is None: 
+                        break
+                    
+                    wav, rec = item
+
+                    # Stamp RVC queue exit and start of RVC processing
+                    rec.rvc_queue_exit = time.perf_counter()
+                    tr0 = time.perf_counter()
+                    
+                    new_aud = rvc_converter.vc(wav)  # outputs 2D array, need to squeeze to 1D
+                            
+                    if new_aud.shape[0] == 0:
+                        # In case RVC returns empty because the audio < block frames and is too short (non-ideal), preserve original speech
+                        logger.warning("[RVC] RVC returned empty, preserving original.")
+                    else:
+                        wav = new_aud.squeeze(axis=1)  # squeeze to 1D
+                        logger.debug("[RVC] TTS audio processed through RVC.")
+
+                    tr1 = time.perf_counter()
+                    rec.rvc_start = tr0
+                    rec.rvc_end   = tr1
+                    logger.info(f'[LATENCY] RVC processing took {tr1 - tr0:.3f}s')
+
+                    finalize_and_send(wav, rec)
+
+            except (BrokenPipeError, ConnectionResetError):
+                logger.info("broken pipe / connection reset (RVC worker) -- connection closed?")
+            
+            except Exception as e:
+                logger.error(f"RVC Thread Error: {e}")
+
+            finally:
+                self.rvc_queue.task_done()
+
+        if RVC_FLAG:
+            Thread(target=rvc_worker_loop, daemon=True).start()
+
+        
+        self.warmup_models(self.rvc_queue)  # warm up
+
+        try:
+            while True:
         print("TTS client connected.")
         
         # Helper for cleanup and sending code
@@ -878,19 +992,19 @@ class Server:
                     rec.tts_queue_exit = time.perf_counter()
                     logger.info(f'[LATENCY] Total time in buffer & TTS queue: {rec.buffer_and_queue_dur:.3f}s')
 
-                    logger.debug("o received from TTS queue.")
+                logger.debug("o received from TTS queue.")
 
-                    text = o[2]
+                text = o[2]
 
-                    # Generate speech
-                    logger.debug("GENERATING TTS audio...")
-                    tts_synth_t0 = time.perf_counter()
+                # Generate speech
+                logger.debug("GENERATING TTS audio...")
+                tts_synth_t0 = time.perf_counter()
 
-                    # Removed this because too blunt
-                    # # Artificially normalize text by adding periods to pauses in text so TTS better captures intonation
-                    # if ARTIFIC_INTON:
-                    #     if text and text[-1] not in TTS_END_PUNCT:
-                    #         text += ","
+                # Removed this because too blunt
+                # # Artificially normalize text by adding periods to pauses in text so TTS better captures intonation
+                # if ARTIFIC_INTON:
+                #     if text and text[-1] not in TTS_END_PUNCT:
+                #         text += ","
 
                     # wav = tts.tts(text)
                     wav = synthesize_text(text)
@@ -923,6 +1037,9 @@ class Server:
                         # Only use RVC if audio is long enough to be meaningful
                         min_samples = 2000  # ~0.125s at 16kHz
                         if wav.shape[0] >= min_samples:
+                            # Stamp RVC queue enter and put in RVC queue
+                            rec.rvc_queue_enter = time.perf_counter()
+                            self.rvc_queue.put((wav, rec))
                             # Stamp RVC queue enter and put in RVC queue
                             rec.rvc_queue_enter = time.perf_counter()
                             self.rvc_queue.put((wav, rec))
