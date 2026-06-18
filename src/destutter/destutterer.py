@@ -20,6 +20,21 @@ FADE = 0.015  # 15 ms fade for crossfade_concat
 TARGET_KEEP = 0.12  # target keep length for /p destutter in seconds, tune by ear (e.g. 0.10–0.15)
 PAUSE = 0.10  # target pause length for /b destutter in seconds, tune by ear (e.g. 0.08–0.12)
 
+# Audio destutter guards to reduce false positives
+# Req this many consecutive above-threshold windows before opening a region
+# At hop=0.25s, MIN_CONSECUTIVE=2 means the stutter must persist for >=0.5s
+MIN_CONSECUTIVE = 2
+# Only apply a cut if detected region is at least this long (seconds)
+# Real prolongations/blocks are sustained, brief spikes are noise
+MIN_REGION_DUR = 0.5
+
+# Override thresholds for /p and /b used in aud_destutter_chunk (pre-STT context)
+# The thresholds.pt values were optimised for F-beta on the stutter eval set but produced too many false positives on fluent speech
+# Run calibrate_aud_thresholds() on known fluent audio to find good values then set them here
+# None = fall back to thresholds.pt values (not recommended).
+AUD_THRESH_P = 0.368   # e.g. 0.75 - set after running calibration
+AUD_THRESH_B = 0.479   # e.g. 0.80 - set after running calibration
+
 # Debug prints flag
 DEBUG = True
 
@@ -57,6 +72,70 @@ class Destutterer:
         '''Returns current text'''
         return self.text
 
+    def aud_destutter_chunk(self, audio_chunk):
+        '''Pre-STT audio destuttering for prolongations and blocks.
+        Operates on a raw incoming audio chunk with no segment boundary knowledge.
+        Runs a sliding StutterNet window over the chunk, detects /p and /b regions,
+        and applies p_destutter / b_destutter directly on the chunk audio.
+
+        Uses calibrated thresholds (AUD_THRESH_P / AUD_THRESH_B) if set, otherwise
+        falls back to thresholds.pt values. Run calibrate_aud_thresholds() on known
+        fluent audio first to find appropriate values for AUD_THRESH_P and AUD_THRESH_B.
+
+        audio_chunk: 1D np.float32 array at self.sr
+        Returns: 1D np.float32 array (same or shorter length)'''
+
+        chunk_len = len(audio_chunk)
+
+        # Need at least one hop worth of audio to do anything
+        hop_samples = int(0.5 * self.sr)   # 0.5s hop - halves inference calls vs original 0.25s; real prolongations/blocks last >0.5s so resolution is fine
+        if chunk_len < hop_samples:
+            return audio_chunk
+
+        window_samples = int(3.0 * self.sr)
+
+        # Slide over chunk and collect per-window probabilities
+        window_probs = {'/p': [], '/b': []}
+        center_times = []  # in seconds, relative to start of chunk
+
+        for win_start in range(0, chunk_len - hop_samples, hop_samples):
+            win_end = min(win_start + window_samples, chunk_len)
+            segment = audio_chunk[win_start:win_end]
+            probs = self.get_audio_stutter_probs(segment)
+            window_probs['/p'].append(probs['/p'])
+            window_probs['/b'].append(probs['/b'])
+            center_sec = (win_start + win_end) / 2.0 / self.sr
+            center_times.append(center_sec)
+
+        # Use calibrated thresholds if available, else fall back to thresholds.pt
+        thresh_p = AUD_THRESH_P if AUD_THRESH_P is not None else self.thresholds_tensor[0].item()
+        thresh_b = AUD_THRESH_B if AUD_THRESH_B is not None else self.thresholds_tensor[1].item()
+
+        if DEBUG:
+            print(f'[AUD_DESTUT] /p probs: {[f"{p:.2f}" for p in window_probs["/p"]]}  thresh={thresh_p:.2f}')
+            print(f'[AUD_DESTUT] /b probs: {[f"{p:.2f}" for p in window_probs["/b"]]}  thresh={thresh_b:.2f}')
+
+        # Find the longest above-threshold region for /p and /b
+        p_start, p_end = self.estimate_region_local(center_times, window_probs['/p'], thresh_p)
+        b_start, b_end = self.estimate_region_local(center_times, window_probs['/b'], thresh_b)
+
+        # Apply cuts directly on chunk (times are already chunk-local seconds).
+        # Guard: skip if region is too short to be a real stutter event.
+        # Temporarily set beg_time=0 so seg_local_to_global in debug prints works.
+        self.beg_time = 0.0
+
+        if p_start is not None and (p_end - p_start) >= MIN_REGION_DUR:
+            audio_chunk = self.p_destutter(audio_chunk, p_start, p_end)
+        elif p_start is not None and DEBUG:
+            print(f'[AUD_DESTUT] /p region {p_start:.2f}s–{p_end:.2f}s skipped (duration {p_end - p_start:.2f}s < MIN_REGION_DUR {MIN_REGION_DUR}s)')
+
+        if b_start is not None and (b_end - b_start) >= MIN_REGION_DUR:
+            audio_chunk = self.b_destutter(audio_chunk, b_start, b_end)
+        elif b_start is not None and DEBUG:
+            print(f'[AUD_DESTUT] /b region {b_start:.2f}s–{b_end:.2f}s skipped (duration {b_end - b_start:.2f}s < MIN_REGION_DUR {MIN_REGION_DUR}s)')
+
+        return audio_chunk
+
     def get_destutter_info(self, client_type, t_to_buffer, audio_buffer, beg_time, end_time, text):
         '''Returns info needed for destuttering to call individual stutter_type methods separately
         Returns different info based on stt or tts destuttering
@@ -80,7 +159,7 @@ class Destutterer:
         self.words = text.split() # list of words in text segment
 
         # Sliding 3s window over audio corresponding to text segment
-        hop = 0.25 * self.sr   # could increase this if latency is too high
+        hop = 0.35 * self.sr   # could increase this if latency is too high
         window_size = 3.0 * self.sr  # 3s window; window size in samples
         loc_start = (self.beg_time - self.t_to_buffer) * self.sr  # buffer local
         loc_end = (self.end_time - self.t_to_buffer) * self.sr  # buffer local
@@ -318,22 +397,35 @@ class Destutterer:
             print(f'wr_destutter for t from {self.beg_time} to {self.end_time} success')
 
     def i_destutter(self, stutter_word_idxs):
-        '''Destutter for /i'''
+        '''Destutter for /i.
+        Only removes a word if it is on the known interjection whitelist —
+        this prevents real content words from being deleted when the timing
+        estimate snaps to the wrong word.'''
+
+        # Canonical interjections and filler words that should be removed
+        INTERJECTION_WHITELIST = {
+            'um', 'uh', 'er', 'eh', 'ah', 'oh', 'hmm', 'hm', 'mhm',
+            'like', 'so', 'well', 'right', 'okay', 'ok', 'yeah', 'yes',
+            'no', 'actually', 'basically', 'literally', 'you', 'know',
+            'i', 'mean', 'just', 'kind', 'sort', 'thing', 'stuff',
+        }
+
         # For debug
         if DEBUG:
             popped_words = []
 
-        # Remove interjection word if it's detected
         if stutter_word_idxs.get('/i', None) is not None:
             idx = stutter_word_idxs['/i']
+            if idx < len(self.words):
+                word = self.words[idx].lower().strip(".,!?;:'\"")
+                if word in INTERJECTION_WHITELIST:
+                    if DEBUG:
+                        popped_words.append(self.words[idx])
+                    self.words.pop(idx)
+                    self.text = ' '.join(self.words)
+                elif DEBUG:
+                    print(f'i_destutter: skipping "{self.words[idx]}" — not in interjection whitelist')
 
-            if DEBUG:
-                popped_words.append(self.words[idx])
-
-            self.words.pop(idx)  # remove the interjection word
-            self.text = ' '.join(self.words)
-
-        # Debug prints
         if DEBUG:
             print(f'i_destutter for t from {self.beg_time} to {self.end_time} success; popped {popped_words}')            
 
@@ -455,11 +547,13 @@ class Destutterer:
         
         return stutter_word_idxs
     
-    def estimate_region_local(self, centers, probs, thresh):
-        '''Estimates stutter time region from a time series of probabilities
+    def estimate_region_local(self, centers, probs, thresh, min_consecutive=MIN_CONSECUTIVE):
+        '''Estimates stutter time region from a time series of probabilities.
         centers: [c0, c1, ...] where c0, c1 etc. are local center times (s)
         probs:   [p0, p1, ...] matching centers
-        thresh: probability threshold
+        thresh:  probability threshold
+        min_consecutive: number of consecutive above-threshold windows required to
+                         open a region. Prevents single-window spikes from triggering cuts.
         Returns (t_start, t_end) in buffer-local seconds, or (None, None) if nothing.'''
 
         if not centers or not probs:
@@ -468,29 +562,33 @@ class Destutterer:
         in_region = False
         cur_start = None
         cur_end = None
+        consecutive_count = 0
 
         best_start = None
         best_end = None
         best_len = 0.0
 
-        # For every time step
         for i in range(len(centers)):
             t = centers[i]
             p = probs[i]
 
-            # Stutter detected at this time step
             if p >= thresh:
-                if not in_region:
-                    in_region = True
-                    cur_start = t  # approx region start
-                cur_end = t        # keep extending
-            
-            # Stutter no longer detected
+                consecutive_count += 1
+
+                if consecutive_count >= min_consecutive:
+                    if not in_region:
+                        in_region = True
+                        # Back-date start to the first window in this run
+                        first_in_run = i - (consecutive_count - 1)
+                        cur_start = centers[first_in_run]
+                    cur_end = t
+
             else:
-                # Check if it's a blip
-                if i != len(centers) - 1 and probs[i + 1] >= thresh:  # next step has stutter
-                    continue  # ignore this blip
-                else:  # not a blip, end of region
+                # Allow a single-window blip before closing the region
+                if i != len(centers) - 1 and probs[i + 1] >= thresh:
+                    continue  # skip this one dip, don't reset consecutive_count
+                else:
+                    consecutive_count = 0
                     if in_region:
                         in_region = False
                         length = cur_end - cur_start
@@ -499,7 +597,7 @@ class Destutterer:
                             best_start, best_end = cur_start, cur_end
 
         # If we ended still inside a region
-        if in_region:
+        if in_region and cur_start is not None and cur_end is not None:
             length = cur_end - cur_start
             if length > best_len:
                 best_start, best_end = cur_start, cur_end
@@ -544,3 +642,57 @@ class Destutterer:
 
         return t_start_global, t_end_global
 
+
+def calibrate_aud_thresholds(destutterer, fluent_audio_path, percentile=95, hop_sec=0.25, window_sec=3.0):
+    '''Calibrate AUD_THRESH_P and AUD_THRESH_B by running StutterNet over a known
+    fluent audio file and finding the percentile of /p and /b probabilities.
+
+    The idea: on fluent speech the model should output low probabilities for /p and /b.
+    Setting the threshold above the Nth percentile of those probabilities ensures we only
+    fire on audio that is clearly more stutter-like than typical fluent speech.
+    '''
+    import librosa
+
+    # Load audio if a path was given
+    if isinstance(fluent_audio_path, str):
+        audio, _ = librosa.load(fluent_audio_path, sr=destutterer.sr, mono=True)
+    else:
+        audio = np.asarray(fluent_audio_path, dtype=np.float32)
+
+    sr = destutterer.sr
+    hop_samples = int(hop_sec * sr)
+    window_samples = int(window_sec * sr)
+    chunk_len = len(audio)
+
+    if chunk_len < hop_samples:
+        raise ValueError(f'Audio is too short ({chunk_len} samples) for calibration. Need at least {hop_samples}.')
+
+    all_p = []
+    all_b = []
+
+    for win_start in range(0, chunk_len - hop_samples, hop_samples):
+        win_end = min(win_start + window_samples, chunk_len)
+        segment = audio[win_start:win_end]
+        probs = destutterer.get_audio_stutter_probs(segment)
+        all_p.append(probs['/p'])
+        all_b.append(probs['/b'])
+
+    if not all_p:
+        raise ValueError('No windows were processed. Check audio length and hop_sec.')
+
+    all_p = np.array(all_p)
+    all_b = np.array(all_b)
+
+    thresh_p = float(np.percentile(all_p, percentile))
+    thresh_b = float(np.percentile(all_b, percentile))
+
+    print(f'\n=== Calibration results ({len(all_p)} windows, {percentile}th percentile) ===')
+    print(f'/p  — min={all_p.min():.3f}  median={np.median(all_p):.3f}  95th={np.percentile(all_p,95):.3f}  max={all_p.max():.3f}')
+    print(f'/b  — min={all_b.min():.3f}  median={np.median(all_b):.3f}  95th={np.percentile(all_b,95):.3f}  max={all_b.max():.3f}')
+    print(f'\nRecommended thresholds (set these in destutterer.py):')
+    print(f'  AUD_THRESH_P = {thresh_p:.3f}')
+    print(f'  AUD_THRESH_B = {thresh_b:.3f}')
+    print(f'\nIf get false positives, re-run with a higher percentile')
+    print(f'If miss real stutters, try a lower percentile\n')
+
+    return thresh_p, thresh_b
