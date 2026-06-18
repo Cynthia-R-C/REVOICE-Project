@@ -28,6 +28,10 @@ from latency_tracking import LatencyRecord, LatencyTracker
 tracker = LatencyTracker()
 
 
+# ======= STT CPU ======= #
+cpu_online = None   # set in main() if WHISPER_ON_CPU is True
+
+
 # ======= DESTUTTERING IMPORTS/CONSTANTS ======= #
 import sys
 destutter_dir = os.path.abspath('C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\src\\destutter')
@@ -58,7 +62,7 @@ def get_base_online():
 
 
 # ======= Testing ======= #
-GROUP = 'stt_models_prot_2'
+GROUP = 'latency_testing_2'
 # TRIAL = '1'  #  will just have to manually rename the file as I test unless I wanna stop the server and restart it just to update the constant in file naming and that’s not worth it
 TRANSCRIPT_PATH = f'test_results/{GROUP}/transcript.txt'
 STATS_PATH = f'test_results/{GROUP}/stats.txt'
@@ -66,11 +70,14 @@ AUD_DESTUT_OUTPUT_PATH = f'test_results/{GROUP}/aud_destut_output.wav'
 
 
 # ======= Other Toggles ======= #
+# Run Whisper on CPU so it doesn't compete with MeloTTS + RVC for the GPU
+WHISPER_ON_CPU = True
+
 SAVE_TRANSCRIPT = True
 tts_flag = False  # becomes true when a TTS client connects to the server
-RVC_FLAG = False   # choose whether to enable RVC or not
-TXT_DESTUT = False # whether or not to do text destuttering
-AUD_DESTUT = False  # whether or not to do audio 
+RVC_FLAG = True   # choose whether to enable RVC or not
+TXT_DESTUT = True # whether or not to do text destuttering
+AUD_DESTUT = True  # whether or not to do audio 
 SAVE_AUD_DESTUT_OUTPUT = True  # save post-audio-destutter audio to a wav for inspection
 
 USE_COQUI = False
@@ -97,7 +104,6 @@ MELO_SPEED = 0.8
 TTS_GROUPING_ENABLED = True
 ARTIFIC_INTON = True   # whether or not to normalize text groups with punctuation before TTS conversion
 TTS_MAX_WAIT_SEC = 0.3   # max seconds to stay in buffer; adds dash with this pause time
-FLUSH_TIMER_ENABLED = False  # whether to run the background TTS flush timer loop
 SILENCE_TIMEOUT = 1.1   # Seconds of silence before forcing flush; adds period with this pause time
 TTS_END_PUNCT = '.?!,:;'
 
@@ -105,7 +111,7 @@ TTS_END_PUNCT = '.?!,:;'
 # Main function within if __name__ == '__main__' to prevent infinite process spawning on Windows
 def main():
     # Use global keywords so the rest of script can see these objects
-    global args, asr, online, base_online, rvc_converter, min_chunk, size, language
+    global cpu_online, args, asr, online, base_online, rvc_converter, min_chunk, size, language
     global tts, TTS_SR, destutterer_stt, melo_speaker_ids
     
  
@@ -133,6 +139,43 @@ def main():
     base_online = get_base_online()
 
     min_chunk = args.min_chunk_size
+
+
+    # ======= CPU Whisper (parallel inference) ======= #
+    # Load a second Whisper instance on CPU to run in parallel with TTS and RVC
+    if WHISPER_ON_CPU:
+        logger.info("Loading CPU Whisper model (int8)...")
+        from faster_whisper import WhisperModel
+        cpu_whisper_model = WhisperModel(
+            args.model,
+            device="cpu",
+            compute_type="int8",
+            cpu_threads=12,        # use most of CPU cores for inference
+            num_workers=1,
+            download_root=args.model_cache_dir,
+        )
+        # Wrap in FasterWhisperASR shell so it's compatible with OnlineASRProcessor
+        cpu_asr = FasterWhisperASR(lan=args.lan, modelsize=args.model, cache_dir=args.model_cache_dir)
+        cpu_asr.model = cpu_whisper_model  # replace the GPU model with the CPU one
+        if args.task == "translate":
+            cpu_asr.set_translate_task()
+
+        # Make OnlineASRProcessor around the CPU model
+        from whisper_online import OnlineASRProcessor, VACOnlineASRProcessor, create_tokenizer
+        tokenizer = create_tokenizer(args.lan) if args.buffer_trimming == "sentence" else None
+        if args.vac:
+            cpu_online = VACOnlineASRProcessor(
+                args.min_chunk_size, cpu_asr, tokenizer,
+                buffer_trimming=(args.buffer_trimming, args.buffer_trimming_sec)
+            )
+        else:
+            cpu_online = OnlineASRProcessor(
+                cpu_asr, tokenizer,
+                buffer_trimming=(args.buffer_trimming, args.buffer_trimming_sec)
+            )
+        logger.info("CPU Whisper model loaded.")
+    else:
+        cpu_online = None
 
 
     # ======= Set Up TTS ======= #
@@ -286,9 +329,8 @@ class ServerProcessor:
         self._destutter_thread.start()
 
         # TTS BUFFER FLUSH
-        if FLUSH_TIMER_ENABLED:
-            self._flush_timer_thread = Thread(target=self._tts_flush_timer_loop, daemon=True)
-            self._flush_timer_thread.start()
+        self._flush_timer_thread = Thread(target=self._tts_flush_timer_loop, daemon=True)
+        self._flush_timer_thread.start()
 
     def _tts_flush_timer_loop(self):
         '''Background thread: fires flush_tts_group() as soon as TTS_MAX_WAIT_SEC has elapsed since the buffer started filling, independently of whether new STT text has arrived. Preserves all prosody logic'''
@@ -325,10 +367,10 @@ class ServerProcessor:
                 time.sleep(0.005)
 
     def _destutter_loop(self):
-        '''Background thread: assembles min_chunk-sized pieces from _audio_deque,
-        runs aud_destutter_chunk (slow StutterNet) off the main thread, then puts
-        results into _processed_queue for process() to consume.
-        Sends a None sentinel when the stream ends.'''
+        '''Background thread: assembles min_chunk-sized pieces from _audio_deque, runs aud_destutter_chunk (slow StutterNet) here off the main thread, then puts results into _processed_queue
+        Whisper and destuttering now run in parallel 
+        
+        When the queue is backed up, merges new chunks into the oldest waiting item so Whisper still hears all audio, just in larger batches'''
         minlimit = self.min_chunk * SAMPLING_RATE
         is_first_local = True
 
@@ -374,32 +416,37 @@ class ServerProcessor:
                 self.aud_destut_chunks.append(conc.copy())
 
             pq_enter = time.perf_counter()
-            # Always push every chunk — never merge or drop. Merging the oldest
-            # waiting item causes data loss because the other queued items are
-            # skipped by Whisper's internal cursor and their text is never emitted.
-            self._processed_queue.put((conc, times, aud_times, pq_enter))
+            new_item = (conc, times, aud_times, pq_enter)
+
+            # If the queue is backed up, merge this chunk into the oldest waiting item rather than letting the queue grow unboundedly
+            # Whisper still hears all audio, just in a larger batch
+            if self._processed_queue.qsize() >= 2:
+                try:
+                    old_conc, old_times, old_aud_times, old_pq_enter = self._processed_queue.get_nowait()
+                    merged_conc = np.concatenate([old_conc, conc])
+                    merged_times = old_times + times  # preserve all arrival timestamps
+                    # Keep the older pq_enter and aud_times so latency records
+                    # reflect when this group first entered the queue
+                    self._processed_queue.put_nowait((merged_conc, merged_times, old_aud_times, old_pq_enter))
+                    logger.warning("[BACKPRESSURE] Merged chunk into queue — Whisper falling behind")
+                except queue.Empty:
+                    # Race condition: queue drained between qsize() check and get()
+                    # Just push normally
+                    self._processed_queue.put(new_item)
+            else:
+                self._processed_queue.put(new_item)
 
     def receive_audio_chunk(self):
         '''Pulls the next processed chunk from _processed_queue.
-        Uses a short timeout loop so it can notice when the stream ends even if
-        the sentinel arrives slightly late (avoids blocking forever).'''
-        while True:
-            try:
-                item = self._processed_queue.get(timeout=0.1)
-            except queue.Empty:
-                # No item yet — check if the stream is fully done
-                if not self._receive_thread_running and self._processed_queue.empty():
-                    return None, None
-                continue
-
-            if item is None:
-                return None, None
-
-            conc, times, aud_times, pq_enter = item
-            pq_exit = time.perf_counter()
-            self._last_aud_destut_times = aud_times
-            self._last_processed_queue_times = (pq_enter, pq_exit)
-            return conc, times
+        Near-instant — all the heavy work happens in the background threads.'''
+        item = self._processed_queue.get()
+        if item is None:
+            return None, None
+        conc, times, aud_times, pq_enter = item
+        pq_exit = time.perf_counter()
+        self._last_aud_destut_times = aud_times
+        self._last_processed_queue_times = (pq_enter, pq_exit)
+        return conc, times
 
 
     def format_output_transcript(self,o):
@@ -580,14 +627,18 @@ class ServerProcessor:
 
     def process(self):
         '''handle one stt client connection'''
-        self.online_asr_proc.init()
+        # Use CPU Whisper if enabled so STT runs in parallel with TTS+RVC on GPU
+        # Falls back to GPU online if WHISPER_ON_CPU is off or cpu_online not loaded
+        active_online = cpu_online if (WHISPER_ON_CPU and cpu_online is not None) else online
+        active_online.init()
+
         while True:
             a, startTimes = self.receive_audio_chunk()
             if a is None:
                 break
-            self.online_asr_proc.insert_audio_chunk(a)
+            active_online.insert_audio_chunk(a)
             stt_synth_t0 = time.perf_counter()
-            o = online.process_iter()   # o[0]: beg, o[1]: end, o[2]: text string
+            o = active_online.process_iter()   # o[0]: beg, o[1]: end, o[2]: text string
 
             now = time.perf_counter()
 
@@ -622,8 +673,10 @@ class ServerProcessor:
                     # Track destuttering logic start time
                     t0 = time.perf_counter()
 
-                    t_to_buffer = base_online.buffer_time_offset  # time between global stream start and audio buffer start
-                    audio_buffer = base_online.audio_buffer  # current audio buffer - a list of samples
+                    # Use active_online's buffer, not the GPU one (may differ if WHISPER_ON_CPU)
+                    active_base = active_online.online if isinstance(active_online, VACOnlineASRProcessor) else active_online
+                    t_to_buffer = active_base.buffer_time_offset  # time between global stream start and audio buffer start
+                    audio_buffer = active_base.audio_buffer  # current audio buffer - a list of samples
                     beg_time = o[0]  # beg time of text (global)
                     end_time = o[1]  # end time of text (global)
                     text = o[2]      # text of current segment

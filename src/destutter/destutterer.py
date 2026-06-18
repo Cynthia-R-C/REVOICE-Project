@@ -88,8 +88,7 @@ class Destutterer:
         chunk_len = len(audio_chunk)
 
         # Need at least one hop worth of audio to do anything
-        hop_samples = int(0.5 * self.sr)   # 0.5s hop — halves inference calls vs original 0.25s;
-                                            # real prolongations/blocks last >0.5s so resolution is fine
+        hop_samples = int(0.5 * self.sr)   # 0.5s hop - halves inference calls vs original 0.25s; real prolongations/blocks last >0.5s so resolution is fine
         if chunk_len < hop_samples:
             return audio_chunk
 
