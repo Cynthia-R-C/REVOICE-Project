@@ -264,8 +264,10 @@ def main():
 
     # Try to export scripted model
     if rank == 0:
-        script_model = torch.jit.script(model)
-        script_model.save(os.path.join(args.model_dir, 'init.zip'))
+        pass
+        # commented out to prevent error
+        # script_model = torch.jit.script(model)
+        # script_model.save(os.path.join(args.model_dir, 'init.zip'))
 
     executor = Executor()
 

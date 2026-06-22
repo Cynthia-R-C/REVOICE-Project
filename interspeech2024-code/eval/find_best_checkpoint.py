@@ -1,4 +1,4 @@
-# Program for finding the StutterNet model checkpoint with the lowest cv loss
+# Program for finding the model checkpoint with the lowest cv loss
 # Cynthia Chen 11/11/2025
 
 import os
@@ -35,5 +35,5 @@ def find_best_checkpoint(model_dir):
         print('No valid .yaml files found or none contained cv_loss.')
 
 if __name__ == '__main__':
-    model_dir = 'C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\interspeech2024-code\\exp\\stutternet_en'  # adjust path as needed
+    model_dir = 'C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\interspeech2024-code\\exp\\convlstm_en'  # adjust path as needed
     find_best_checkpoint(model_dir)

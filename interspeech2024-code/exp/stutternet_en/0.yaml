@@ -1,5 +1,5 @@
-cv_loss: 0.23770187297132722
+cv_loss: 0.4058448603374884
 epoch: 0
 lr: 1.0e-06
-save_time: 19/11/2025 01:17:05
+save_time: 18/06/2026 13:34:31   # this is in 2026 because I accidentally ran ConvLSTM training in this folder on that date. I stopped it in time so it didn't override any of the other existing StutterNet checkpoints but it did override this initial one. No actual impact on the StutterNet model since I used way later checkpoints in REVOICE but adding a note here.
 step: 219
