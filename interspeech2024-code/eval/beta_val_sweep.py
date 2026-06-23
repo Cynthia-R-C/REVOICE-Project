@@ -15,11 +15,11 @@ THRESH_SCRIPT = ROOT / 'interspeech2024-code/sed/wenet/wenet/bin/compute_thresho
 INFER_SCRIPT   = ROOT / 'interspeech2024-code/sed/wenet/wenet/bin/infer_sed.py'
 
 # Paths to config / info files
-TRAIN_CONFIG   = ROOT / 'interspeech2024-code/sed/examples/stutter_event/s0/conf/train_stutternet.yaml'
+TRAIN_CONFIG   = ROOT / 'interspeech2024-code/sed/examples/stutter_event/s0/conf/train_convlstm.yaml'
 TUNING_CONFIG  = ROOT / 'interspeech2024-code/eval/tuning_config.json'
 CMVN_PATH      = ROOT / 'interspeech2024-code/data/train/global_cmvn'
 DATASET_LIST   = ROOT / 'interspeech2024-code/data/test/infer_data.list'
-CHECKPOINT     = ROOT / 'interspeech2024-code/exp/stutternet_en/36.pt'
+CHECKPOINT     = ROOT / 'interspeech2024-code/exp/convlstm_en/63.pt'
 
 # Output paths
 THRESH_OUTPUT  = ROOT / 'interspeech2024-code/eval/thresholds.pt'
@@ -32,6 +32,9 @@ BETA_MIN = 0.0
 BETA_MAX = 5.0
 BETA_STEP = 0.05
 
+# Retry configuration (handles intermittent native/CUDA crashes on infer_sed.py)
+MAX_RETRIES = 2
+
 # Stutter types
 STUTTER_LABELS = ['/p', '/b', '/r', '/wr', '/i']
 
@@ -43,19 +46,21 @@ DEBUG = True
 # Helper: run command in subprocess and ensure safety
 
 def run_cmd(cmd_list):
-    '''Run a command and return (success, output).
+    '''Run a command and return (returncode, stdout, stderr).
     Code basically taken from Medium article by Doug Creates.'''
+
     try:
         p = subprocess.Popen(
             cmd_list,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
+            stderr=subprocess.PIPE,
+            cwd=str(ROOT)
         )
         stdout, stderr = p.communicate()
-        return stdout.decode(), stderr.decode()
-    
+        return p.returncode, stdout.decode('utf-8', errors='replace'), stderr.decode('utf-8', errors='replace')
+
     except Exception as e:
-        return '', str(e)
+        return -1, '', str(e)
 
 
 # Helper: update tuning_config.json
@@ -75,7 +80,7 @@ def update_tuning_config(beta_vals):
         with open(TUNING_CONFIG, 'r') as f:
             tuning_config = json.load(f)
         print(f"Using betas for this run: {tuning_config['f_beta']}")  # check if beta vals are actually changing
-        with open(DEBUG_LOG, 'a') as logf:
+        with open(DEBUG_LOG, 'a', encoding='utf-8') as logf:
             logf.write(f"Using betas for this run: {tuning_config['f_beta']}\n")
 
 
@@ -117,13 +122,16 @@ def main():
     # Log start
     if DEBUG:
         # Clear log file and prepare to write
-        with open(DEBUG_LOG, 'w') as logf:
+        with open(DEBUG_LOG, 'w', encoding='utf-8') as logf:
             logf.write('Beta Sweep Log\n\n')
 
     # Prepare storage for curves
     beta_values = np.arange(BETA_MIN, BETA_MAX + BETA_STEP, BETA_STEP)
 
-    # 5 classes × list of values across beta sweep
+    # Track only the betas that actually produced results, alongside their precision/recall, so plotting can never hit a length mismatch even if some iterations fail or get skipped
+    successful_betas = []
+
+    # 5 classes x list of values across beta sweep
     prec_curves = {label: [] for label in STUTTER_LABELS}
     rec_curves    = {label: [] for label in STUTTER_LABELS}
 
@@ -140,7 +148,7 @@ def main():
         print(f'\n==== Testing beta = {beta:.2f} ====')
 
         if DEBUG:
-            with open(DEBUG_LOG, 'a') as logf:
+            with open(DEBUG_LOG, 'a', encoding='utf-8') as logf:
                 logf.write(f'\n==== Testing beta = {beta:.2f} ====\n')
 
         # 1. Update tuning config
@@ -158,21 +166,21 @@ def main():
             '--output', str(THRESH_OUTPUT),
             '--graph', 'False'  # no point in graphing every time
         ]
-        stdout, stderr = run_cmd(cmd_thresh)
+        returncode, stdout, stderr = run_cmd(cmd_thresh)
         if stderr and ('Traceback' in stderr or 'Error' in stderr):
             print('compute_threshold.py failed:', stderr)
-            with open(DEBUG_LOG, 'a') as logf:
+            with open(DEBUG_LOG, 'a', encoding='utf-8') as logf:
                 logf.write(f'compute_threshold.py failed: {stderr}\n')
             continue
 
         if DEBUG:
             threshold = torch.load(THRESH_OUTPUT).to(device)  # load computed thresholds
             print(f'Thresholds: {threshold}')
-            with open(DEBUG_LOG, 'a') as logf:
+            with open(DEBUG_LOG, 'a', encoding='utf-8') as logf:
                 logf.write(f'Thresholds: {threshold}\n')
 
 
-        # 3. Run inference
+        # 3. Run inference (with retry for intermittent native/CUDA crashes)
         cmd_infer = [
             'python', str(INFER_SCRIPT),
             '--config', str(TRAIN_CONFIG),
@@ -186,29 +194,55 @@ def main():
             '--data_type', 'shard',
             '--batch_size', '16'
         ]
-        stdout, stderr = run_cmd(cmd_infer)
-        if stderr and ('Traceback' in stderr or 'Error' in stderr):
-            print('infer_sed.py failed:', stderr)
+
+        infer_succeeded = False
+        for attempt in range(MAX_RETRIES + 1):
+            returncode, stdout, stderr = run_cmd(cmd_infer)
+            with open(DEBUG_LOG, 'a', encoding='utf-8') as logf:
+                logf.write(f'infer_sed.py attempt {attempt} returncode: {returncode}\n')
+                logf.write(f'STDOUT:\n{stdout}\n')
+                logf.write(f'STDERR:\n{stderr}\n')
+
+            if returncode == 0:
+                infer_succeeded = True
+                break
+
+            if attempt < MAX_RETRIES:
+                print(f'infer_sed.py failed (attempt {attempt}), retrying...')
+            else:
+                print('infer_sed.py failed after retries, see log')
+
+        if not infer_succeeded:
             continue
 
         # 4. Parse inference results
         parsed = parse_infer_results()
         if parsed is None:
             print('Could not parse infer_sed_results.txt')
+            with open(DEBUG_LOG, 'a', encoding='utf-8') as logf:
+                logf.write('Could not parse infer_sed_results.txt\n')
             continue
 
         prec, rec = parsed
         if DEBUG:
             print(f'Precision: {prec}')
             print(f'Recall: {rec}')
-            with open(DEBUG_LOG, 'a') as logf:
+            with open(DEBUG_LOG, 'a', encoding='utf-8') as logf:
                 logf.write(f'Precision: {prec}\n')
                 logf.write(f'Recall: {rec}\n')
 
-        # Store values
+        # Store values, keyed against this specific successful beta
+        successful_betas.append(beta)
         for i, label in enumerate(STUTTER_LABELS):
             prec_curves[label].append(prec[i])
             rec_curves[label].append(rec[i])
+
+    # Warn if any betas were dropped entirely
+    n_failed = len(beta_values) - len(successful_betas)
+    if n_failed > 0:
+        print(f'\nWarning: {n_failed} beta value(s) did not produce results and were skipped.')
+        with open(DEBUG_LOG, 'a', encoding='utf-8') as logf:
+            logf.write(f'\nWarning: {n_failed} beta value(s) did not produce results and were skipped.\n')
 
     # 5. Plotting
     OUT_DIR.mkdir(exist_ok=True)
@@ -217,7 +251,7 @@ def main():
     for label in STUTTER_LABELS:
         safe_label = sanitize(label)
         plt.figure(figsize=(8,5))
-        plt.plot(beta_values, prec_curves[label], label=f'{label} precision')
+        plt.plot(successful_betas, prec_curves[label], label=f'{label} precision')
         plt.title(f'Precision vs Beta ({label})')
         plt.xlabel('Beta')
         plt.ylabel('Precision (%)')
@@ -229,7 +263,7 @@ def main():
     for label in STUTTER_LABELS:
         safe_label = sanitize(label)
         plt.figure(figsize=(8,5))
-        plt.plot(beta_values, rec_curves[label], label=f'{label} recall')
+        plt.plot(successful_betas, rec_curves[label], label=f'{label} recall')
         plt.title(f'Recall vs Beta ({label})')
         plt.xlabel('Beta')
         plt.ylabel('Recall (%)')
