@@ -72,6 +72,7 @@ RVC_FLAG = True   # choose whether to enable RVC or not
 TXT_DESTUT = True # whether or not to do text destuttering
 AUD_DESTUT = True  # whether or not to do audio 
 SAVE_AUD_DESTUT_OUTPUT = True  # save post-audio-destutter audio to a wav for inspection
+USE_MODEL_FOR_TXT = False   # whether to use the model for text destuttering at all
 
 USE_COQUI = False
 USE_MELO = True
@@ -628,18 +629,28 @@ class ServerProcessor:
                     end_time = o[1]  # end time of text (global)
                     text = o[2]      # text of current segment
                     
-                    t_maxs, stutter_word_idxs = destutterer_stt.get_destutter_info('stt', t_to_buffer, audio_buffer, beg_time, end_time, text)  # get t_maxs and stutter word indices
-                    
+                    if USE_MODEL_FOR_TXT:
+                        t_maxs, stutter_word_idxs = destutterer_stt.get_destutter_info('stt', t_to_buffer, audio_buffer, beg_time, end_time, text)  # get t_maxs and stutter word indices
+                    else:
+                        destutterer_stt.text = text
+                        destutterer_stt.words = text.split()
+                        destutterer_stt.beg_time = beg_time
+                        destutterer_stt.end_time = end_time
+
                     ## Simple: SOUND REP ##
                     destutterer_stt.r_destutter()
 
                     ## Medium: WORD REP ##
                     # Only run this if word rep detected in model(?) might not be necessary, could just run this without model
-                    if t_maxs['/wr'] is not None:
+                    if USE_MODEL_FOR_TXT:
+                        if t_maxs['/wr'] is not None:
+                            destutterer_stt.wr_destutter()
+                    else:
                         destutterer_stt.wr_destutter()
 
                     ## Complex: INTERJECTIONS ##
-                    destutterer_stt.i_destutter(stutter_word_idxs)
+                    if USE_MODEL_FOR_TXT:
+                        destutterer_stt.i_destutter(stutter_word_idxs)
 
                     # Update output o with destuttered text
                     new_txt = destutterer_stt.get_text()
