@@ -93,6 +93,13 @@ class Destutterer:
         for win_start in range(0, len(self._aud_buffer) - window_samples + 1, hop_samples):
             win_end = win_start + window_samples
             segment = self._aud_buffer[win_start:win_end]
+            if DEBUG:
+                # TEMP DIAGNOSTIC: confirms whether each window's audio is genuinely different or if something upstream is feeding the model the same content every time
+                # Doing this bc /p and /b probs are staying the same every slice
+                print(f'[AUD_DESTUT DEBUG] window @ {win_start/self.sr:.2f}s  '
+                      f'min={segment.min():.4f} max={segment.max():.4f} '
+                      f'rms={np.sqrt(np.mean(segment.astype(np.float64)**2)):.4f} '
+                      f'dtype={segment.dtype}')
             probs = self.get_audio_stutter_probs(segment)
             window_probs['/p'].append(probs['/p'])
             window_probs['/b'].append(probs['/b'])

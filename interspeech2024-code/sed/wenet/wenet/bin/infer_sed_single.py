@@ -107,6 +107,9 @@ class StutterSED:
         self.mean = torch.tensor(mean).to(self.device).float()
         self.istd = torch.tensor(istd).to(self.device).float()
 
+        # Whether self.model already normalizes its own input internally
+        self.model_self_normalizes = hasattr(self.model, 'global_cmvn')
+
 
     def infer(self, audio, is_print=False):
         '''Run inference process for one audio input
@@ -161,7 +164,9 @@ class StutterSED:
         feats = feats.float()
 
         feats = feats.to(self.device)
-        feats = (feats - self.mean) * self.istd
+        # Only manually normalize here if the model doesn't already interally normalize
+        if not self.model_self_normalizes:
+            feats = (feats - self.mean) * self.istd
         feats = feats.unsqueeze(0)
         feats_lengths = torch.tensor([feats.size(1)]).to(self.device)
 
