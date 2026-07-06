@@ -369,9 +369,11 @@ class ServerProcessor:
             is_first_local = False
 
             # Audio destuttering runs HERE, off the main thread.
-            # Skip if Whisper is already backed up, no point burning GPU on audio that will just sit in the queue + it frees CUDA for Whisper
+
+            # There used to be a backpressure check of skipping chunks when Whisper was behind; however after adding in rolling buffer for audio destuttering, aud destut is no longer stateless, so this must be run in order
+            
             aud_times = None
-            if AUD_DESTUT and self._processed_queue.qsize() == 0:
+            if AUD_DESTUT:
                 t0 = time.perf_counter()
                 conc = destutterer_stt.aud_destutter_chunk(conc)
                 t1 = time.perf_counter()
@@ -380,8 +382,7 @@ class ServerProcessor:
             if SAVE_AUD_DESTUT_OUTPUT:
                 self.aud_destut_chunks.append(conc.copy())
 
-            # aud_destutter_chunk() now holds some audio back internally as a rolling
-            # lookahead margin, so conc could come back empty
+            # aud_destutter_chunk() now holds some audio back internally as a rolling lookahead margin, so conc could come back empty
             # Skip pushing an empty item downstream
             if len(conc) == 0:
                 continue
