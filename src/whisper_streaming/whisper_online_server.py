@@ -352,6 +352,13 @@ class ServerProcessor:
                     time.sleep(0.005)
 
             if not out:
+                # Stream is ending, flush audio destutter buffer
+                if AUD_DESTUT:
+                    final_conc = destutterer_stt.flush_aud_buffer()
+                    if len(final_conc) > 0:
+                        if SAVE_AUD_DESTUT_OUTPUT:
+                            self.aud_destut_chunks.append(final_conc.copy())
+                        self._processed_queue.put((final_conc, times, None, time.perf_counter()))
                 self._processed_queue.put(None)
                 break
 
@@ -362,8 +369,7 @@ class ServerProcessor:
             is_first_local = False
 
             # Audio destuttering runs HERE, off the main thread.
-            # Skip if Whisper is already backed up — no point burning GPU on
-            # audio that will just sit in the queue, and it frees CUDA for Whisper.
+            # Skip if Whisper is already backed up, no point burning GPU on audio that will just sit in the queue + it frees CUDA for Whisper
             aud_times = None
             if AUD_DESTUT and self._processed_queue.qsize() == 0:
                 t0 = time.perf_counter()
@@ -374,10 +380,14 @@ class ServerProcessor:
             if SAVE_AUD_DESTUT_OUTPUT:
                 self.aud_destut_chunks.append(conc.copy())
 
+            # aud_destutter_chunk() now holds some audio back internally as a rolling
+            # lookahead margin, so conc could come back empty
+            # Skip pushing an empty item downstream
+            if len(conc) == 0:
+                continue
+
             pq_enter = time.perf_counter()
-            # Always push every chunk — never merge or drop. Merging the oldest
-            # waiting item causes data loss because the other queued items are
-            # skipped by Whisper's internal cursor and their text is never emitted.
+            # Always push every chunk, never merge or drop: merging oldest waiting item causes data loss bc the other queued items are skipped by Whisper's internal cursor
             self._processed_queue.put((conc, times, aud_times, pq_enter))
 
     def receive_audio_chunk(self):
@@ -582,6 +592,8 @@ class ServerProcessor:
     def process(self):
         '''handle one stt client connection'''
         self.online_asr_proc.init()
+        # clear audio buffer for new session
+        destutterer_stt.reset_aud_buffer()
         while True:
             a, startTimes = self.receive_audio_chunk()
             if a is None:
@@ -632,11 +644,12 @@ class ServerProcessor:
                     if USE_MODEL_FOR_TXT:
                         t_maxs, stutter_word_idxs = destutterer_stt.get_destutter_info('stt', t_to_buffer, audio_buffer, beg_time, end_time, text)  # get t_maxs and stutter word indices
                     else:
+                        # get_destutter_info() is the only place that normally sets destutterer_stt.text etc., so manually set it here
                         destutterer_stt.text = text
                         destutterer_stt.words = text.split()
                         destutterer_stt.beg_time = beg_time
                         destutterer_stt.end_time = end_time
-
+                    
                     ## Simple: SOUND REP ##
                     destutterer_stt.r_destutter()
 

@@ -54,6 +54,11 @@ class Destutterer:
         self.text = ''  # text segment
         self.words = []  # list of words in text segment
 
+        # Persistent rolling buffer for AUDIO destuttering only
+        # Separate from self.audio_buffer above (which is a reference to Whisper's buffer)
+        # Enough total buffered audio (retain_margin, below) that MULTIPLE overlapping 3.0s windows exist at once
+        self._aud_buffer = np.array([], dtype=np.float32)
+
         # Non-segment-specific instance variables are initialized here
         self.config = config_path
         self.checkpoint = ckpt_path
@@ -72,42 +77,27 @@ class Destutterer:
         '''Returns current text'''
         return self.text
 
-    def aud_destutter_chunk(self, audio_chunk):
-        '''Pre-STT audio destuttering for prolongations and blocks.
-        Operates on a raw incoming audio chunk with no segment boundary knowledge.
-        Runs a sliding StutterNet window over the chunk, detects /p and /b regions,
-        and applies p_destutter / b_destutter directly on the chunk audio.
-
-        Uses calibrated thresholds (AUD_THRESH_P / AUD_THRESH_B) if set, otherwise
-        falls back to thresholds.pt values. Run calibrate_aud_thresholds() on known
-        fluent audio first to find appropriate values for AUD_THRESH_P and AUD_THRESH_B.
-
-        audio_chunk: 1D np.float32 array at self.sr
-        Returns: 1D np.float32 array (same or shorter length)'''
-
-        chunk_len = len(audio_chunk)
-
-        # Need at least one hop worth of audio to do anything
-        hop_samples = int(0.5 * self.sr)   # 0.5s hop - halves inference calls vs original 0.25s; real prolongations/blocks last >0.5s so resolution is fine
-        if chunk_len < hop_samples:
-            return audio_chunk
-
+    def _run_aud_detection_and_cuts(self):
+        '''Shared by aud_destutter_chunk() and flush_aud_buffer(): runs the sliding
+        window over self._aud_buffer, finds /p and /b regions, and applies cuts
+        in place. Assumes the caller has already appended any new audio.'''
+        hop_samples = int(0.5 * self.sr)
         window_samples = int(3.0 * self.sr)
 
-        # Slide over chunk and collect per-window probabilities
-        window_probs = {'/p': [], '/b': []}
-        center_times = []  # in seconds, relative to start of chunk
+        if len(self._aud_buffer) < window_samples:
+            return  # not enough audio for even one full window - nothing to detect
 
-        for win_start in range(0, chunk_len - hop_samples, hop_samples):
-            win_end = min(win_start + window_samples, chunk_len)
-            segment = audio_chunk[win_start:win_end]
+        window_probs = {'/p': [], '/b': []}
+        center_times = []  # in seconds, relative to start of self._aud_buffer
+
+        for win_start in range(0, len(self._aud_buffer) - window_samples + 1, hop_samples):
+            win_end = win_start + window_samples
+            segment = self._aud_buffer[win_start:win_end]
             probs = self.get_audio_stutter_probs(segment)
             window_probs['/p'].append(probs['/p'])
             window_probs['/b'].append(probs['/b'])
-            center_sec = (win_start + win_end) / 2.0 / self.sr
-            center_times.append(center_sec)
+            center_times.append((win_start + win_end) / 2.0 / self.sr)
 
-        # Use calibrated thresholds if available, else fall back to thresholds.pt
         thresh_p = AUD_THRESH_P if AUD_THRESH_P is not None else self.thresholds_tensor[0].item()
         thresh_b = AUD_THRESH_B if AUD_THRESH_B is not None else self.thresholds_tensor[1].item()
 
@@ -115,26 +105,74 @@ class Destutterer:
             print(f'[AUD_DESTUT] /p probs: {[f"{p:.2f}" for p in window_probs["/p"]]}  thresh={thresh_p:.2f}')
             print(f'[AUD_DESTUT] /b probs: {[f"{p:.2f}" for p in window_probs["/b"]]}  thresh={thresh_b:.2f}')
 
-        # Find the longest above-threshold region for /p and /b
         p_start, p_end = self.estimate_region_local(center_times, window_probs['/p'], thresh_p)
         b_start, b_end = self.estimate_region_local(center_times, window_probs['/b'], thresh_b)
 
-        # Apply cuts directly on chunk (times are already chunk-local seconds).
-        # Guard: skip if region is too short to be a real stutter event.
         # Temporarily set beg_time=0 so seg_local_to_global in debug prints works.
         self.beg_time = 0.0
 
+        # Potential problem: if both a /p and a /b region are detected in the same pass, p_destutter is applied first and can shift sample indices before b_destutter runs against the (still pre-shift) b_start/b_end
         if p_start is not None and (p_end - p_start) >= MIN_REGION_DUR:
-            audio_chunk = self.p_destutter(audio_chunk, p_start, p_end)
+            self._aud_buffer = self.p_destutter(self._aud_buffer, p_start, p_end)
         elif p_start is not None and DEBUG:
             print(f'[AUD_DESTUT] /p region {p_start:.2f}s–{p_end:.2f}s skipped (duration {p_end - p_start:.2f}s < MIN_REGION_DUR {MIN_REGION_DUR}s)')
 
         if b_start is not None and (b_end - b_start) >= MIN_REGION_DUR:
-            audio_chunk = self.b_destutter(audio_chunk, b_start, b_end)
+            self._aud_buffer = self.b_destutter(self._aud_buffer, b_start, b_end)
         elif b_start is not None and DEBUG:
             print(f'[AUD_DESTUT] /b region {b_start:.2f}s–{b_end:.2f}s skipped (duration {b_end - b_start:.2f}s < MIN_REGION_DUR {MIN_REGION_DUR}s)')
 
-        return audio_chunk
+    def aud_destutter_chunk(self, audio_chunk):
+        '''Pre-STT audio destuttering for prolongations and blocks
+        Maintains its own rolling buffer (self._aud_buffer) which guarentees multiple windows exist at once
+
+        Appends to the internal buffer + runs detection/destuttering against the buffer.
+        IMPORTANT: call flush_aud_buffer() once when stream ends to release remaining buffered tail
+
+        Uses calibrated thresholds (AUD_THRESH_P / AUD_THRESH_B) if set, otherwise fall back to thresholds.pt values
+
+        audio_chunk: 1D np.float32 array at self.sr
+        Returns: 1D np.float32 array'''
+
+        window_samples = int(3.0 * self.sr)
+        hop_samples = int(0.5 * self.sr)
+        
+        retain_margin = window_samples + MIN_CONSECUTIVE * hop_samples  # retain enough margin
+
+        # Append the new audio onto our persistent buffer
+        if len(self._aud_buffer):
+            self._aud_buffer = np.concatenate([self._aud_buffer, audio_chunk])
+        else:
+            self._aud_buffer = audio_chunk.astype(np.float32, copy=True)
+
+        self._run_aud_detection_and_cuts()
+
+        # Release everything except retain_margin at the tail 
+        # Must stay buffered bc any of it could still be reevaluated by a future window once more audio arrives - a region only "closes" (and only gets cut) once
+        release_len = len(self._aud_buffer) - retain_margin
+        if release_len <= 0:
+            return np.array([], dtype=np.float32)
+
+        released = self._aud_buffer[:release_len]
+        self._aud_buffer = self._aud_buffer[release_len:]
+        return released
+
+    def flush_aud_buffer(self):
+        '''Call once at end-of-stream (client disconnected, no more audio coming) to release whatever's left in the rolling audio-destutter buffer
+        
+        Does NOT hold back a lookahead margin - there is no more audio coming, so there's nothing left to wait for'''
+        if len(self._aud_buffer) == 0:
+            return np.array([], dtype=np.float32)
+
+        self._run_aud_detection_and_cuts()
+
+        released = self._aud_buffer
+        self._aud_buffer = np.array([], dtype=np.float32)
+        return released
+
+    def reset_aud_buffer(self):
+        '''Call at the start of a new session to clear buffer'''
+        self._aud_buffer = np.array([], dtype=np.float32)
 
     def get_destutter_info(self, client_type, t_to_buffer, audio_buffer, beg_time, end_time, text):
         '''Returns info needed for destuttering to call individual stutter_type methods separately
