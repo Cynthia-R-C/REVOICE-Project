@@ -135,6 +135,9 @@ class StutterSED:
             wav_np = np.asarray(audio, dtype=np.float32)  # just in case do this
             wav = torch.from_numpy(wav_np).unsqueeze(0)  # convert to tensor
 
+        # Important: rescale for int16 PCM
+        wav = wav * (1 << 15)
+
         feats_type = self.test_conf.get('feats_type', 'fbank')
         if feats_type == 'fbank':
             fbank_conf = self.test_conf.get('fbank_conf', {})

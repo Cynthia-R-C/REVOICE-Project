@@ -32,8 +32,14 @@ MIN_REGION_DUR = 0.5
 # The thresholds.pt values were optimised for F-beta on the stutter eval set but produced too many false positives on fluent speech
 # Run calibrate_aud_thresholds() on known fluent audio to find good values then set them here
 # None = fall back to thresholds.pt values (not recommended).
-AUD_THRESH_P = 0.368   # e.g. 0.75 - set after running calibration
-AUD_THRESH_B = 0.479   # e.g. 0.80 - set after running calibration
+
+# StutterNet
+AUD_THRESH_P = 0.299
+AUD_THRESH_B = 0.325
+
+# ConvLSTM
+# AUD_THRESH_P = 0.266
+# AUD_THRESH_B = 0.118
 
 # Debug prints flag
 DEBUG = True
