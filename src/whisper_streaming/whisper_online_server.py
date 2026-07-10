@@ -35,7 +35,7 @@ sys.path.append(destutter_dir)  # add destutter folder to paths to search
 from destutterer import Destutterer
 
 SAMPLING_RATE = 16000
-CLASS_MODEL = 'StutterNet'  # 'ConvLSTM' or 'StutterNet'
+CLASS_MODEL = 'ConvLSTM'  # 'ConvLSTM' or 'StutterNet'
 
 if CLASS_MODEL == 'StutterNet':
     CONFIG_PATH = 'C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\interspeech2024-code\\sed\\examples\\stutter_event\\s0\\conf\\train_stutternet.yaml'

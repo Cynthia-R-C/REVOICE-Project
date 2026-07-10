@@ -34,12 +34,12 @@ MIN_REGION_DUR = 0.5
 # None = fall back to thresholds.pt values (not recommended).
 
 # StutterNet
-AUD_THRESH_P = 0.299
-AUD_THRESH_B = 0.325
+# AUD_THRESH_P = 0.299
+# AUD_THRESH_B = 0.325
 
 # ConvLSTM
-# AUD_THRESH_P = 0.266
-# AUD_THRESH_B = 0.118
+AUD_THRESH_P = None
+AUD_THRESH_B = None
 
 # Debug prints flag
 DEBUG = True
