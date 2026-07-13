@@ -197,7 +197,7 @@ class StutterSED:
             else:
                 print('threshold: None (using raw probabilities)')
 
-            print("\n=== StutterNet Results ===")
+            print("\n=== Results ===")
             for i, label in enumerate(labels):
                 print(f"{label}: {results[i]} (prob={probs[i]:.4f})")  # if thresholds not intended to be used, will just output probabilities for both results and probs
 
