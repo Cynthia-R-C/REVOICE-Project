@@ -1,8 +1,9 @@
-# whisper STT client — FILE INPUT VERSION
-# Streams a WAV file to the server in real-time-paced chunks, instead of reading from the mic. This is a drop-in substitute for whisper_client.py for offline/repeatable testing.
+# whisper STT client
+# FILE INPUT VERSION
+# Streams a WAV file to the server in real-time-paced chunks instead of reading from mic
 
-# KEY IDEA: the server has no notion of "mic" vs "file" — it just calls conn.recv() on raw PCM16 bytes (see Connection.non_blocking_receive_audio() in whisper_online_server.py). The only thing that makes mic input behave like real-time streaming is that pyaudio's stream.read(CHUNK_SIZE) BLOCKS for roughly CHUNK_SIZE/RATE seconds. 
-# Reading a file has no such blocking, so if you sendall() the whole file at once, the server receives it as one burst which breaks every timing-dependent part of the pipeline (e.g. destutter window/hop timing, min_chunk gating TTS_MAX_WAIT_SEC / SILENCE_TIMEOUT logic, latency stats, backpressure checks, etc)
+# KEY IDEA: server calls conn.recv() on raw PCM16 bytes (Connection.non_blocking_receive_audio() in whisper_online_server.py)
+# The only thing that makes mic input behave like real-time streaming is pyaudio's stream.read(CHUNK_SIZE) BLOCKS for roughly CHUNK_SIZE/RATE secs
 # This script reproduces the mic's pacing
 
 import argparse
@@ -15,21 +16,19 @@ import numpy as np
 import soundfile as sf
 import librosa
  
-# Audio settings (must match server's expectations: 16kHz, mono, 16-bit signed integer)
+# Audio settings (match server)
 RATE = 16000
 CHUNK_SIZE = 4000  # samples per chunk == 0.25s, same as whisper_client.py
 CHANNELS = 1
  
-# Server connection settings (match those used for the server)
+# Server connection settings (match server)
 HOST = 'localhost'
 PORT = 9000
  
  
 def load_wav_as_pcm16(path):
-    """Load an audio file, force it to 16kHz mono, and return raw int16 PCM bytes.
-    Using librosa.load mirrors exactly what the server does when it decodes
-    incoming audio (librosa.load(..., sr=SAMPLING_RATE)), so there's no
-    resampling mismatch between what you feed in and what the server assumes."""
+    '''Load audio wav as pcm16 bytes
+    Uses librosa like server to avoid mismatch'''
     audio, sr = librosa.load(path, sr=RATE, mono=True, dtype=np.float32)
     # float32 [-1, 1] -> int16 PCM, matching finalize_and_send()'s wav*32767 convention
     audio = np.clip(audio, -1.0, 1.0)
@@ -38,23 +37,24 @@ def load_wav_as_pcm16(path):
  
  
 def receive_from_server(sock):
-    '''Thread to receive and print transcription from server. Identical to whisper_client.py.'''
+    '''Thread to receive and print transcription from server, identical to whisper_client.py'''
     while True:
         try:
             data = sock.recv(4096)
             if not data:
                 break
             print(data.decode('utf-8'), flush=True)
-        except Exception as e:
-            print(f"Error receiving data: {e}")
+        except OSError:
+            # Expected, not an error: happens when the main thread times out waiting
+            # for graceful server-side close and force-closes the socket while this
+            # thread is still blocked in recv() on it (WinError 10038/10053-class
+            # errors on Windows). Harmless - just exit quietly instead of alarming.
             break
  
  
 def stream_file(sock, pcm_bytes, chunk_size, rate, realtime=True, speed=1.0):
-    """Send pcm_bytes to sock in chunk_size-sample pieces, paced to mimic
-    real-time mic input. Uses a drift-corrected clock (schedule against an
-    absolute start time, not a running sum of sleeps) so timing errors from
-    sleep() and I/O jitter don't accumulate over a long file."""
+    '''Send pcm_bytes to sock in chunk_size-sample pieces paced to mimic
+    real-time mic input.'''
     bytes_per_chunk = chunk_size * 2  # int16 = 2 bytes/sample
     chunk_dur = chunk_size / rate     # seconds of audio per chunk
  
@@ -71,10 +71,7 @@ def stream_file(sock, pcm_bytes, chunk_size, rate, realtime=True, speed=1.0):
         n_sent += 1
  
         if realtime:
-            # Target wall-clock time this chunk should have finished sending,
-            # relative to start. Sleeping to an absolute target (rather than
-            # sleeping chunk_dur every iteration) prevents drift from
-            # accumulating across thousands of chunks.
+            # Use absolute start time instead of running sum of sleeps so timing errors don't accumulate over time
             target_elapsed = (n_sent * chunk_dur) / speed
             actual_elapsed = time.perf_counter() - start
             remaining = target_elapsed - actual_elapsed
@@ -82,72 +79,58 @@ def stream_file(sock, pcm_bytes, chunk_size, rate, realtime=True, speed=1.0):
                 time.sleep(remaining)
  
     if realtime:
-        print(f"Finished streaming {n_sent} chunks "
-              f"({n_sent * chunk_dur / speed:.2f}s target duration).")
+        print(f'Finished streaming {n_sent} chunks '
+              f'({n_sent * chunk_dur / speed:.2f}s target duration).')
     else:
-        print(f"Finished streaming {n_sent} chunks as fast as possible (non-realtime mode).")
+        print(f'Finished streaming {n_sent} chunks as fast as possible (non-realtime mode).')
  
  
 def main():
     parser = argparse.ArgumentParser(
-        description="Stream a WAV file to the whisper_online_server.py STT socket, "
-                    "paced to simulate live mic input.")
-    parser.add_argument('audio_path', type=str, help="Path to input audio file (any format librosa can read).")
+        description='Stream a WAV file to the whisper_online_server.py STT socket, '
+                    'paced to simulate live mic input.')
+    parser.add_argument('audio_path', type=str, help='Path to input audio file (any format librosa can read).')
     parser.add_argument('--host', type=str, default=HOST)
     parser.add_argument('--port', type=int, default=PORT)
     parser.add_argument('--chunk-size', type=int, default=CHUNK_SIZE,
-                        help="Samples per chunk sent to the server (default 4000, matches whisper_client.py).")
+                        help='Samples per chunk sent to the server (default 4000, matches whisper_client.py).')
     parser.add_argument('--speed', type=float, default=1.0,
-                        help="Playback speed multiplier. 1.0 = real-time (default). "
-                             "2.0 sends audio twice as fast as real-time (useful for quick regression runs "
-                             "while still exercising the streaming/timing logic, just compressed).")
+                        help='Playback speed multiplier. 1.0 = real-time (default). '
+                             '2.0 sends audio twice as fast as real-time (useful for quick regression runs ')
     parser.add_argument('--no-realtime', action='store_true',
-                        help="Disable pacing entirely and send as fast as the socket allows. "
-                             "NOTE: this defeats the purpose of streaming simulation — timing-dependent "
-                             "logic (destutter hop windows, TTS grouping waits, latency stats) will not "
-                             "behave as it would with live audio. Only use this to sanity-check that data "
-                             "flows through the pipeline at all, not to validate timing behavior.")
+                        help='Disable pacing entirely and send as fast as the socket allows. ')
+    parser.add_argument('--wait-timeout', type=float, default=180.0,
+                        help='Seconds to wait after sending for the server to finish processing and close its end (default 180s)')
     args = parser.parse_args()
  
-    print(f"Loading {args.audio_path}...")
+    print(f'Loading {args.audio_path}...')
     pcm_bytes = load_wav_as_pcm16(args.audio_path)
     duration = len(pcm_bytes) / 2 / RATE
     pcm_arr = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32) / 32767.0
     peak = np.abs(pcm_arr).max() if len(pcm_arr) else 0.0
     rms = np.sqrt(np.mean(pcm_arr ** 2)) if len(pcm_arr) else 0.0
-    print(f"Loaded {duration:.2f}s of audio at {RATE}Hz mono. "
-          f"Peak amplitude: {peak:.4f}, RMS: {rms:.4f}")
+    print(f'Loaded {duration:.2f}s of audio at {RATE}Hz mono. '
+          f'Peak amplitude: {peak:.4f}, RMS: {rms:.4f}')
     if peak < 0.02:
-        print("WARNING: peak amplitude is very low — this audio may be near-silent "
+        print("WARNING: peak amplitude is very low, this audio may be near-silent "
               "after loading/downmixing. Play it back locally to confirm it's audible "
               "before assuming the pipeline is at fault.")
  
-    # Dump exactly what will be streamed, byte-for-byte, so you can play back precisely
-    # what the server receives — this rules out load_wav_as_pcm16() itself as the culprit.
+    # Playback verification
     debug_dump_path = args.audio_path + '.streamed_debug.wav'
     sf.write(debug_dump_path, pcm_arr, RATE, subtype='PCM_16')
-    print(f"Wrote exact pre-stream audio to {debug_dump_path} for playback verification.")
+    print(f'Wrote exact pre-stream audio to {debug_dump_path} for playback verification.')
  
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         sock.connect((args.host, args.port))
-        print(f"Connected to server at {args.host}:{args.port}.")
+        print(f'Connected to server at {args.host}:{args.port}.')
         sock.send('stt'.encode('utf-8'))  # same handshake as whisper_client.py
  
-        # IMPORTANT: give the server time to accept() the connection, spawn its
-        # client thread, and finish its single conn.recv(1024) handshake read
-        # BEFORE we send any audio. With the mic client, pyaudio's blocking
-        # stream.read(CHUNK_SIZE) naturally creates a ~250ms gap here (waiting
-        # for hardware to fill a buffer), which is why the mic path never hits
-        # this. A file is already fully loaded in memory, so without this
-        # delay the first audio sendall() can follow the handshake send() by
-        # microseconds — on localhost, TCP can coalesce both into one receive
-        # buffer, and the server's recv(1024) will swallow up to 1024 bytes of
-        # real PCM audio along with "stt", silently dropping it before
-        # _audio_receive_loop ever sees it.
+        # Give server time to accept conn, spawn client thread, and finish conn.recv handshake before sending audio
         time.sleep(0.3)
     except Exception as e:
-        print(f"Failed to connect: {e}")
+        print(f'Failed to connect: {e}')
         sys.exit(1)
  
     receiver_thread = threading.Thread(target=receive_from_server, args=(sock,))
@@ -158,32 +141,22 @@ def main():
         stream_file(sock, pcm_bytes, args.chunk_size, RATE,
                     realtime=not args.no_realtime, speed=args.speed)
  
-        # Graceful half-close instead of a blind sleep + close.
-        # SHUT_WR tells the server "I'm done sending" without tearing down our
-        # read side. On the server, non_blocking_receive_audio() then gets b''
-        # (clean EOF) instead of a hard reset — this is what lets
-        # _audio_receive_loop() set _receive_thread_running = False cleanly,
-        # which cascades through _destutter_loop()'s sentinel, process()'s
-        # final flush_tts_group(), and handle_stt_client()'s post-process
-        # cleanup (WAV save, WER calc, stats report) without an exception.
-        # A fixed sleep() before a full close() is just guessing how long that
-        # takes — for a long file with a busy TTS/RVC queue it can easily be
-        # too short, which is what produced the ConnectionResetError.
-        print("Done sending audio. Half-closing write side, waiting for server "
-              "to finish and close its end...")
+        # Half close to signal end of file w/o closing read side; wait for server to finish and close its end
+        print('Done sending audio. Half-closing write side, waiting for server '
+              'to finish and close its end...')
         try:
             sock.shutdown(socket.SHUT_WR)
         except OSError:
             pass  # already closed on the other end
  
-        # Wait for the receiver thread to exit, which happens once the server
-        # closes its side too (recv() returns b''). Bounded wait so a server
-        # bug can't hang this script forever.
-        receiver_thread.join(timeout=30.0)
+        # Wait for the receiver thread to exit (once server closes its end)
+        receiver_thread.join(timeout=args.wait_timeout)
         if receiver_thread.is_alive():
-            print("Server didn't close its end within 30s — closing anyway.")
+            print(f'Server did not close its end within {args.wait_timeout:.0f}s, closing anyway.')
+            print('Does NOT necessarily mean the server is stuck, may still be finishing (trailing-silence re-transcription, destutter flush, TTS/RVC drain etc)')
+            print('If server is still actively logging in its terminal, rerun with larger wait timeout.')
     except KeyboardInterrupt:
-        print("\nStopping...")
+        print('\nStopping...')
     finally:
         sock.close()
  
