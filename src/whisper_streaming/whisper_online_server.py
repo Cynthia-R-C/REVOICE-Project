@@ -745,8 +745,8 @@ class ServerProcessor:
         # send a None sentinel to _processed_queue automatically
         self._receive_thread_running = False
 
-#        o = online.finish()  # this should be working
-#        self.send_result(o)
+        o = online.finish()  # this should be working
+        self.send_result(o)
 
 def calc_avg(l):
     '''Calculates the average given a list of floats'''

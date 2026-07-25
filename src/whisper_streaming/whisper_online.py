@@ -47,6 +47,7 @@ class EnergyGate:
         self.above = 0  # samples above threshold
         self.below = 0  # samples below threshold
         self.is_open = False   # if true, allow audio to pass
+        self.just_closed = False   # True only during the update() call where is_open transitions True->False
 
     # static method
     @staticmethod
@@ -61,6 +62,7 @@ class EnergyGate:
         - returns: whether the gate is open (allowing audio through)
         '''
         energy = self.rms(chunk)
+        self.just_closed = False  # reset each call - only set True below if the open->closed transition happens THIS call
         if energy >= self.rms_threshold:  # above threshold
             self.above += len(chunk)
             self.below = 0
@@ -75,6 +77,7 @@ class EnergyGate:
 
             if self.is_open and self.below >= self.silence_samples:  # only close after silence_ms of continuous energy below threshold
                 self.is_open = False
+                self.just_closed = True
                 return False
         
         return self.is_open
@@ -479,6 +482,18 @@ class HypothesisBuffer:
     def complete(self):
         return self.buffer
 
+    def force_flush_all(self):
+        '''Force-commits everything currently held as an unconfirmed hypothesis (normally a word is only committed once 2 consecutive passes agree)
+        
+        Clears self.buffer and updates last_commited_word/last_commited_time/commited_in_buffer exactly like flush() so later insert() correctly treats this content as already committed.'''
+        commit = self.buffer
+        if commit:
+            self.last_commited_word = commit[-1][2]
+            self.last_commited_time = commit[-1][1]
+            self.commited_in_buffer.extend(commit)
+        self.buffer = []
+        return commit
+
 class OnlineASRProcessor:
 
     SAMPLING_RATE = 16000
@@ -527,7 +542,14 @@ class OnlineASRProcessor:
         else:
             # gate closed = only keep small rolling buffer
             self.audio_buffer = np.append(self.audio_buffer, audio)
-            if len(self.audio_buffer) > self.energy_gate.preroll_samples:  # don't keep more than the amount of preroll specified
+            # Don't truncate on the exact call where the gate just closed -
+            # process_iter() needs one more full-buffer pass first (see the
+            # just_closed check there) to force-flush whatever was still only an
+            # unconfirmed hypothesis. Truncating here, before that pass runs, is
+            # what silently discarded pending speech - the buffer would already be
+            # gone by the time process_iter() got a chance to look at it. Start
+            # discarding down to preroll starting the call AFTER that flush.
+            if not self.energy_gate.just_closed and len(self.audio_buffer) > self.energy_gate.preroll_samples:  # don't keep more than the amount of preroll specified
                 self.audio_buffer = self.audio_buffer[-self.energy_gate.preroll_samples:]
     
 
@@ -556,8 +578,13 @@ class OnlineASRProcessor:
         The non-emty text is confirmed (committed) partial transcript.
         """
 
-        # if gate closed don't decode
-        if not self.energy_gate.is_open:
+        # If the gate is closed AND this isn't the exact call where it just closed,
+        # skip transcription as before. But on the call where it JUST closed, run
+        # through once more anyway - insert_audio_chunk() deliberately withheld
+        # truncating the buffer down to preroll for this one call specifically so
+        # this pass can see everything and get a chance to flush it (see below).
+        gate_just_closed = self.energy_gate.just_closed
+        if not self.energy_gate.is_open and not gate_just_closed:
             logger.debug("Silence. No transcription.")
             return (None, None, "")
 
@@ -577,6 +604,19 @@ class OnlineASRProcessor:
         logger.debug(f">>>>COMPLETE NOW: {completed}")
         the_rest = self.to_flush(self.transcript_buffer.complete())
         logger.debug(f"INCOMPLETE: {the_rest}")
+
+        if gate_just_closed:
+            # This audio_buffer is about to be discarded down to preroll on the next
+            # insert_audio_chunk() call, and there will be no second pass for
+            # LocalAgreement to naturally confirm whatever's still only a hypothesis.
+            # Force-commit it now instead of letting it be silently lost - same
+            # reasoning as finish() at true end-of-stream, just triggered here by a
+            # mid-stream silence gap instead of the connection actually ending.
+            leftover = self.transcript_buffer.force_flush_all()
+            if leftover:
+                logger.debug(f"Gate closing - force-flushing still-incomplete hypothesis: {self.to_flush(leftover)}")
+                self.commited.extend(leftover)
+                o = o + leftover
 
         # there is a newly confirmed text
 
