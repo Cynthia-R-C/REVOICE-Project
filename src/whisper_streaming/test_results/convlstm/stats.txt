@@ -1,0 +1,13 @@
+WER: 0.481
+Average end-to-end latency:            13.578s
+Average audio destutter latency:       0.571s
+Average processed queue wait:          8.389s
+Average STT synthesis latency:         0.949s
+Average STT destutter latency:         0.011s
+Average buffer + TTS queue wait:       1.631s
+Average TTS queue wait (only):         0.548s
+Average TTS synthesis latency:         0.882s
+Average resampling latency:            0.058s
+Average RVC queue idle wait:           0.000s
+Average RVC processing latency:        0.672s
+(Chunks measured: 11)

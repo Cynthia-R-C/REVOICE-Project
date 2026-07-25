@@ -27,6 +27,34 @@ start_times = {}  # dict of average start time of current text segment
 from latency_tracking import LatencyRecord, LatencyTracker
 tracker = LatencyTracker()
 
+# ======= Session Logging ======= #
+class Log:
+    '''Duplicates every terminal output to also a log file (wrapping sys.stdout/sys.stderr), writes flush immediately (not buffered until close) so the log file stays valid in case of killing mid session'''
+
+    def __init__(self, *streams):
+        self.streams = streams
+
+    def write(self, data):
+        for s in self.streams:
+            s.write(data)
+            s.flush()
+
+    def flush(self):
+        for s in self.streams:
+            s.flush()
+
+    def isatty(self):
+        # Some libraries (e.g. tqdm) check this
+        return hasattr(self.streams[0], 'isatty') and self.streams[0].isatty()
+
+
+def start_session_logging(log_path):
+    '''Redirects stdout and stderr so everything printed also goes to log_path'''
+    log_file = open(log_path, 'a', encoding='utf-8', buffering=1)  # line-buffered
+    sys.stdout = Log(sys.stdout, log_file)
+    sys.stderr = Log(sys.stderr, log_file)
+    return log_file
+
 
 # ======= DESTUTTERING IMPORTS/CONSTANTS ======= #
 import sys
@@ -127,10 +155,16 @@ def main():
     parser.add_argument("--port", type=int, default=9000)
     parser.add_argument("--warmup-file", type=str, dest="warmup_file", 
             help="The path to a speech audio wav file to warm up Whisper so that the very first chunk processing is fast. It can be e.g. https://github.com/ggerganov/whisper.cpp/raw/master/samples/jfk.wav .")
+    parser.add_argument("--log-file", type=str, default=None,
+            help="Path to save a full copy of session terminal output")
 
     # options from whisper_online
     add_shared_args(parser)
     args = parser.parse_args()
+
+    log_path = args.log_file or f"test_results/{GROUP}/session_log_{time.strftime('%Y%m%d_%H%M%S')}.txt"
+    start_session_logging(log_path)
+    print(f"[SESSION LOG] Saving full terminal output to: {os.path.abspath(log_path)}")
 
     set_logging(args,logger,other="")
 

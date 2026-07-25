@@ -20,17 +20,14 @@ FADE = 0.015  # 15 ms fade for crossfade_concat
 TARGET_KEEP = 0.12  # target keep length for /p destutter in seconds, tune by ear (e.g. 0.10–0.15)
 PAUSE = 0.10  # target pause length for /b destutter in seconds, tune by ear (e.g. 0.08–0.12)
 
-# Audio destutter guards to reduce false positives
 # Req this many consecutive above-threshold windows before opening a region
-# At hop=0.25s, MIN_CONSECUTIVE=2 means the stutter must persist for >=0.5s
 MIN_CONSECUTIVE = 2
 # Only apply a cut if detected region is at least this long (seconds)
-# Real prolongations/blocks are sustained, brief spikes are noise
 MIN_REGION_DUR = 0.5
+# Hard cap on how much audio a single cut may span (s) to prevent immense deletion in stutter-dense areas
+MAX_REGION_DUR = 1.5
 
 # Override thresholds for /p and /b used in aud_destutter_chunk (pre-STT context)
-# The thresholds.pt values were optimised for F-beta on the stutter eval set but produced too many false positives on fluent speech
-# Run calibrate_aud_thresholds() on known fluent audio to find good values then set them here
 # None = fall back to thresholds.pt values (not recommended).
 
 # StutterNet
@@ -124,16 +121,57 @@ class Destutterer:
         # Temporarily set beg_time=0 so seg_local_to_global in debug prints works.
         self.beg_time = 0.0
 
-        # Potential problem: if both a /p and a /b region are detected in the same pass, p_destutter is applied first and can shift sample indices before b_destutter runs against the (still pre-shift) b_start/b_end
+        # Collect valid cuts first, then apply them in DESCENDING start order: cutting back-to-front keeps all earlier indices valid
+        cuts = []
+
         if p_start is not None and (p_end - p_start) >= MIN_REGION_DUR:
-            self._aud_buffer = self.p_destutter(self._aud_buffer, p_start, p_end)
+            s, e = self._cap_region_to_peak(p_start, p_end, center_times, window_probs['/p'], MAX_REGION_DUR)
+            cuts.append((s, e, '/p'))
         elif p_start is not None and DEBUG:
             print(f'[AUD_DESTUT] /p region {p_start:.2f}s–{p_end:.2f}s skipped (duration {p_end - p_start:.2f}s < MIN_REGION_DUR {MIN_REGION_DUR}s)')
 
         if b_start is not None and (b_end - b_start) >= MIN_REGION_DUR:
-            self._aud_buffer = self.b_destutter(self._aud_buffer, b_start, b_end)
+            s, e = self._cap_region_to_peak(b_start, b_end, center_times, window_probs['/b'], MAX_REGION_DUR)
+            cuts.append((s, e, '/b'))
         elif b_start is not None and DEBUG:
             print(f'[AUD_DESTUT] /b region {b_start:.2f}s–{b_end:.2f}s skipped (duration {b_end - b_start:.2f}s < MIN_REGION_DUR {MIN_REGION_DUR}s)')
+
+        cuts.sort(key=lambda c: c[0], reverse=True)
+        applied_start = None
+        for s, e, cut_type in cuts:
+            if applied_start is not None and e > applied_start:
+                if DEBUG:
+                    print(f'[AUD_DESTUT] {cut_type} region {s:.2f}s–{e:.2f}s deferred this pass '
+                          f'(overlaps a cut already applied at {applied_start:.2f}s - indices no '
+                          f'longer trustworthy; will re-fire next pass if still present)')
+                continue
+            if cut_type == '/p':
+                self._aud_buffer = self.p_destutter(self._aud_buffer, s, e)
+            else:
+                self._aud_buffer = self.b_destutter(self._aud_buffer, s, e)
+            applied_start = s
+
+    @staticmethod
+    def _cap_region_to_peak(start, end, centers, probs, max_dur):
+        '''If a detected region exceeds max_dur, shrink it to the max_dur span
+        centered on the highest-probability window center inside it - keeping the
+        most confident core of the detection and clamping the result inside the
+        original region bounds. Regions already within max_dur pass through
+        unchanged.'''
+        if end - start <= max_dur:
+            return start, end
+        inside = [i for i, c in enumerate(centers) if start <= c <= end]
+        if inside:
+            peak_center = centers[max(inside, key=lambda i: probs[i])]
+        else:
+            peak_center = (start + end) / 2.0
+        half = max_dur / 2.0
+        new_s, new_e = peak_center - half, peak_center + half
+        if new_s < start:
+            new_s, new_e = start, start + max_dur
+        elif new_e > end:
+            new_s, new_e = end - max_dur, end
+        return new_s, new_e
 
     def aud_destutter_chunk(self, audio_chunk):
         '''Pre-STT audio destuttering for prolongations and blocks
