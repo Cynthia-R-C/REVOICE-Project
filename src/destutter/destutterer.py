@@ -24,6 +24,8 @@ PAUSE = 0.10  # target pause length for /b destutter in seconds, tune by ear (e.
 MIN_CONSECUTIVE = 2
 # Only apply a cut if detected region is at least this long (seconds)
 MIN_REGION_DUR = 0.5
+# Rolling-buffer retention for aud destut. Note: requires incoming chunks >= 1.0s (current min_chunk, but could change), raise back toward 4.0 if min_chunk is reduced
+AUD_RETAIN_SEC = 3.5
 # Hard cap on how much audio a single cut may span (s) to prevent immense deletion in stutter-dense areas
 MAX_REGION_DUR = 1.5
 
@@ -187,8 +189,9 @@ class Destutterer:
 
         window_samples = int(3.0 * self.sr)
         hop_samples = int(0.5 * self.sr)
-        
-        retain_margin = window_samples + MIN_CONSECUTIVE * hop_samples  # retain enough margin
+
+        # There's now a dependence on chunk size again, possibly affecting destuttering performance
+        retain_margin = int(AUD_RETAIN_SEC * self.sr)
 
         # Append the new audio onto our persistent buffer
         if len(self._aud_buffer):

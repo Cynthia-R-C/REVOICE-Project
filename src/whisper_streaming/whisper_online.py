@@ -897,7 +897,7 @@ def add_shared_args(parser):
     parser.add_argument('--vac-chunk-size', type=float, default=0.04, help='VAC sample size in seconds.')
     parser.add_argument('--vad', action="store_true", default=False, help='Use VAD = voice activity detection, with the default parameters.')
     parser.add_argument('--buffer_trimming', type=str, default="segment", choices=["sentence", "segment"],help='Buffer trimming strategy -- trim completed sentences marked with punctuation mark and detected by sentence segmenter, or the completed segments returned by Whisper. Sentence segmenter must be installed for "sentence" option.')
-    parser.add_argument('--buffer_trimming_sec', type=float, default=15, help='Buffer trimming length threshold in seconds. If buffer length is longer, trimming sentence/segment is triggered.')
+    parser.add_argument('--buffer_trimming_sec', type=float, default=8, help='Buffer trimming length threshold in seconds. If buffer length is longer, trimming sentence/segment is triggered. Lowered from 15: passes over ~15s buffers ran slower than the ~1s chunk arrival rate, backing up the processed queue (measured 2.9s avg wait); capping at 8s keeps per-pass inference comfortably under arrival rate. The e<=t guard in chunk_completed_segment still prevents trimming past committed words, so this cannot discard text.')
     parser.add_argument("-l", "--log-level", dest="log_level", choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'], help="Set the log level", default='DEBUG')
 
 def asr_factory(args, logfile=sys.stderr):

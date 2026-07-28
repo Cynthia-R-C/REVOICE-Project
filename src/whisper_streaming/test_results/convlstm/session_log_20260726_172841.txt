@@ -1,0 +1,1575 @@
+[SESSION LOG] Saving full terminal output to: C:\Users\crc24\Documents\VS_Code_Python_Folder\ScienceFair2025\src\whisper_streaming\test_results\convlstm\session_log_20260726_172841.txt
+INFO	Loading Whisper large-v3-turbo model for en...
+INFO	done. It took 10.29 seconds.
+C:\Users\crc24\miniconda3\envs\melo_env\lib\site-packages\torch\nn\utils\weight_norm.py:143: FutureWarning: `torch.nn.utils.weight_norm` is deprecated in favor of `torch.nn.utils.parametrizations.weight_norm`.
+  WeightNorm.apply(module, name, dim)
+C:\Users\crc24\miniconda3\envs\melo_env\lib\site-packages\torch\nn\utils\weight_norm.py:143: FutureWarning: `torch.nn.utils.weight_norm` is deprecated in favor of `torch.nn.utils.parametrizations.weight_norm`.
+  WeightNorm.apply(module, name, dim)
+WARNING	Whisper is not warmed up. The first chunk processing may take longer.
+INFO	Listening on('localhost', 9000)
+INFO	Connected to client on ('127.0.0.1', 62832)
+INFO	tts client has connected.
+TTS client connected.
+INFO	Warming up TTS and RVC models...
+ > Text split to sentences.
+Warmup
+ > ===========================
+  0%| | 0/1 [00:00<?, ?it/C:\Users\crc24\miniconda3\envs\melo_env\lib\site-packages\huggingface_hub\file_download.py:945: FutureWarning: `resume_download` is deprecated and will be removed in version 1.0.0. Downloads always resume when possible. If you want to force a new download, use `force_download=True`.
+  warnings.warn(
+100%|#| 1/1 [00:05<00:00, 100%|#| 1/1 [00:05<00:00, 
+cuda_is_available: True
+Index search FAILED or disabled
+Spent time: fea = 0.847s, index = 0.001s, f0 = 0.036s, model = 2.519s
+sola_offset = 0
+Infer time: 3.61
+Index search FAILED or disabled
+Spent time: fea = 0.065s, index = 0.001s, f0 = 0.018s, model = 0.130s
+sola_offset = 145
+Infer time: 0.23
+DEBUG	[RVC] TTS audio processed through RVC.
+INFO	[LATENCY] RVC processing took 3.847s
+INFO	Warmup chunk processed successfully.
+INFO	Connected to client on ('127.0.0.1', 49374)
+INFO	stt client has connected.
+INFO	Starting to process audio from STT client...
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.6227 max=0.6239 rms=0.0701 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.11']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.52']  thresh=0.52
+DEBUG	PROMPT: 
+DEBUG	CONTEXT: 
+DEBUG	transcribing 0.50 seconds from 0.00
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.6227 max=0.6503 rms=0.0698 dtype=float32
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.6227 max=0.6503 rms=0.0734 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.13', '0.16']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.81', '0.75']  thresh=0.52
+b_destutter for t from 1.5 to 2.0 success
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.4836 max=0.6503 rms=0.0524 dtype=float32
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.4836 max=0.6503 rms=0.0524 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.15', '0.56']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.55', '0.37']  thresh=0.52
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.4836 max=0.6503 rms=0.0598 dtype=float32
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.4836 max=0.6503 rms=0.0668 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.75', '0.79']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.24', '0.15']  thresh=0.52
+p_destutter for t from 1.5 to 2.0 success
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.4146 max=0.4337 rms=0.0678 dtype=float32
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.4146 max=0.3916 rms=0.0601 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.61', '0.56']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.18', '0.30']  thresh=0.52
+DEBUG	>>>>COMPLETE NOW: (None, None, '')
+DEBUG	INCOMPLETE: (0.0, 0.4, ' He seemed')
+DEBUG	len of buffer now: 0.50
+INFO	[LATENCY] STT processing took 4.174s
+DEBUG	PROMPT: 
+DEBUG	CONTEXT: 
+DEBUG	transcribing 1.10 seconds from 0.00
+DEBUG	>>>>COMPLETE NOW: (0.0, 0.2, ' He')
+DEBUG	INCOMPLETE: (0.2, 0.64, ' seems-')
+DEBUG	len of buffer now: 1.10
+INFO	[LATENCY] STT processing took 0.468s
+r_destutter for t from 0.0 to 0.2 success
+wr_destutter for t from 0.0 to 0.2 success
+INFO	[LATENCY] STT get_destutter_info took 0.001s
+0 200  He
+DEBUG	PROMPT: 
+DEBUG	CONTEXT:  He
+DEBUG	transcribing 2.10 seconds from 0.00
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.4146 max=0.5973 rms=0.0615 dtype=float32
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.4146 max=0.5973 rms=0.0659 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.33', '0.09']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.31', '0.20']  thresh=0.52
+DEBUG	>>>>COMPLETE NOW: (None, None, '')
+DEBUG	INCOMPLETE: (0.18, 0.52, ' seemed')
+DEBUG	len of buffer now: 2.10
+INFO	[LATENCY] STT processing took 1.105s
+INFO	
+
+
+[TIMEOUT FLUSH] Silence timeout of 1.1s reached. Flushing buffer.
+
+
+
+INFO	
+
+
+[FLUSH] Flushed final TTS grouped chunk: 'He.'
+
+
+
+INFO	[LATENCY] Total time in buffer & TTS queue: 1.108s
+DEBUG	PROMPT: 
+DEBUG	o received from TTS queue.
+DEBUG	CONTEXT:  He
+DEBUG	GENERATING TTS audio...
+ > Text split to sentences.DEBUG	transcribing 2.72 seconds from 0.00
+
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.3571 max=0.5973 rms=0.0582 dtype=float32He.
+
+ > ===========================
+  0%| | 0/1 [00:00<?, ?it/
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.4234 max=0.5973 rms=0.0633 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.15', '0.13']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.32', '0.28']  thresh=0.52
+100%|#| 1/1 [00:00<00:00, 100%|#| 1/1 [00:00<00:00, 
+INFO	[LATENCY] TTS synthesis took 0.912s
+DEBUG	TTS audio generated from text.
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.4234 max=0.5973 rms=0.0674 dtype=float32
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.4234 max=0.5973 rms=0.0737 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.13', '0.14']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.31', '0.30']  thresh=0.52
+DEBUG	>>>>COMPLETE NOW: (0.18, 0.48, ' seemed')
+DEBUG	INCOMPLETE: (0.48, 2.52, ' cut, cut, cut')
+DEBUG	len of buffer now: 2.72
+INFO	[LATENCY] STT processing took 1.255s
+r_destutter for t from 0.18 to 0.48 success
+wr_destutter for t from 0.18 to 0.48 success
+INFO	[LATENCY] STT get_destutter_info took 0.002s
+200 480  seemed
+DEBUG	PROMPT: 
+DEBUG	CONTEXT:  He seemed
+DEBUG	transcribing 3.72 seconds from 0.00
+DEBUG	>>>>COMPLETE NOW: (None, None, '')
+DEBUG	INCOMPLETE: (0.48, 3.7, ' c- c- c- c- content with this')
+DEBUG	len of buffer now: 3.72
+INFO	[LATENCY] STT processing took 0.469s
+DEBUG	PROMPT: 
+DEBUG	CONTEXT:  He seemed
+DEBUG	transcribing 4.72 seconds from 0.00
+DEBUG	Resampled TTS audio from 44100Hz to 16000Hz.
+INFO	[LATENCY] Resampling took 1.032s
+cuda_is_available: True
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.4234 max=0.4833 rms=0.0734 dtype=float32
+Index search FAILED or disabled
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.4234 max=0.4833 rms=0.0759 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.13', '0.07']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.31', '0.18']  thresh=0.52
+Spent time: fea = 0.108s, index = 0.001s, f0 = 0.018s, model = 0.219s
+sola_offset = 33
+Infer time: 0.42
+DEBUG	[RVC] TTS audio processed through RVC.
+INFO	[LATENCY] RVC processing took 0.423s
+DEBUG	Sending audio to TTS client...
+DEBUG	Audio sent to TTS client.
+DEBUG	>>>>COMPLETE NOW: (None, None, '')
+DEBUG	INCOMPLETE: (0.48, 4.7, ' cut content with this small group')
+DEBUG	len of buffer now: 4.72
+INFO	[LATENCY] STT processing took 0.698s
+INFO	
+
+
+[TIMEOUT FLUSH] Silence timeout of 1.1s reached. Flushing buffer.
+
+
+
+INFO	
+
+
+[FLUSH] Flushed final TTS grouped chunk: 'seemed.'
+
+
+
+INFO	[LATENCY] Total time in buffer & TTS queue: 1.169s
+DEBUG	PROMPT: 
+DEBUG	o received from TTS queue.
+DEBUG	CONTEXT:  He seemed
+DEBUG	GENERATING TTS audio...
+ > Text split to sentences.DEBUG	transcribing 5.72 seconds from 0.00
+
+seemed.
+ > ===========================
+  0%| | 0/1 [00:00<?, ?it/[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.4234 max=0.4833 rms=0.0765 dtype=float32
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.4117 max=0.4833 rms=0.0684 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.10', '0.06']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.28', '0.20']  thresh=0.52
+DEBUG	>>>>COMPLETE NOW: (0.48, 4.86, ' cut content with this small group')
+DEBUG	INCOMPLETE: (4.86, 5.62, ' in the villa')
+DEBUG	len of buffer now: 5.72
+INFO	[LATENCY] STT processing took 0.783s
+r_destutter for t from 0.48 to 4.86 success
+wr_destutter for t from 0.48 to 4.86 success
+INFO	[LATENCY] STT get_destutter_info took 0.001s
+480 4860  cut content with this small group
+DEBUG	PROMPT: 
+DEBUG	CONTEXT:  He seemed cut content with this small group
+DEBUG	transcribing 6.72 seconds from 0.00
+100%|#| 1/1 [00:01<00:00, 100%|#| 1/1 [00:01<00:00, 
+INFO	[LATENCY] TTS synthesis took 1.124s
+DEBUG	TTS audio generated from text.
+DEBUG	Resampled TTS audio from 44100Hz to 16000Hz.
+INFO	[LATENCY] Resampling took 0.038s
+cuda_is_available: True
+Index search FAILED or disabled
+DEBUG	>>>>COMPLETE NOW: (4.86, 5.66, ' in the villa')
+DEBUG	INCOMPLETE: (5.66, 6.44, ' some')
+DEBUG	len of buffer now: 6.72
+INFO	[LATENCY] STT processing took 0.531s
+r_destutter for t from 4.86 to 5.66 success
+wr_destutter for t from 4.86 to 5.66 success
+INFO	[LATENCY] STT get_destutter_info took 0.002s
+4860 5660  in the villa
+INFO	TTS grouped chunk queued: 'cut content with this small group in the villa-'
+INFO	[LATENCY] Total time in buffer & TTS queue: 0.535s
+DEBUG	o received from TTS queue.
+DEBUG	GENERATING TTS audio...
+ > Text split to sentences.DEBUG	PROMPT: 
+DEBUG	CONTEXT:  He seemed cut content with this small group in the villa
+
+cut content with this small group in the villa-DEBUG	transcribing 7.72 seconds from 0.00
+
+ > ===========================
+  0%| | 0/1 [00:00<?, ?it/Spent time: fea = 0.071s, index = 0.000s, f0 = 0.015s, model = 0.287s
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.4117 max=0.4833 rms=0.0606 dtype=float32
+sola_offset = 60
+Infer time: 0.54
+DEBUG	[RVC] TTS audio processed through RVC.
+INFO	[LATENCY] RVC processing took 0.543s
+DEBUG	Sending audio to TTS client...
+DEBUG	Audio sent to TTS client.
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.4210 max=0.4833 rms=0.0611 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.12', '0.06']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.33', '0.23']  thresh=0.52
+DEBUG	>>>>COMPLETE NOW: (5.66, 6.48, ' some')
+DEBUG	INCOMPLETE: (6.48, 7.7, ' some some some kind of')
+DEBUG	len of buffer now: 7.72
+INFO	[LATENCY] STT processing took 0.953s
+r_destutter for t from 5.66 to 6.48 success
+wr_destutter for t from 5.66 to 6.48 success
+INFO	[LATENCY] STT get_destutter_info took 0.002s
+5660 6480  some
+DEBUG	PROMPT: 
+DEBUG	CONTEXT:  He seemed cut content with this small group in the villa some
+DEBUG	transcribing 8.72 seconds from 0.00
+100%|#| 1/1 [00:01<00:00, 100%|#| 1/1 [00:01<00:00, 
+INFO	[LATENCY] TTS synthesis took 1.100s
+DEBUG	TTS audio generated from text.
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.5157 max=0.5303 rms=0.0749 dtype=float32
+DEBUG	Resampled TTS audio from 44100Hz to 16000Hz.
+INFO	[LATENCY] Resampling took 0.154s
+cuda_is_available: True
+Index search FAILED or disabled
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.5157 max=0.5303 rms=0.0737 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.07', '0.09']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.20', '0.18']  thresh=0.52
+Spent time: fea = 0.130s, index = 0.001s, f0 = 0.024s, model = 0.327s
+sola_offset = 68
+Infer time: 0.56
+Index search FAILED or disabled
+Spent time: fea = 0.084s, index = 0.001s, f0 = 0.020s, model = 0.190s
+sola_offset = 95
+Infer time: 0.32
+DEBUG	>>>>COMPLETE NOW: (None, None, '')
+DEBUG	INCOMPLETE: (6.48, 8.56, ' kind of loose star on')
+DEBUG	--- not enough segments to chunk
+DEBUG	chunking segment
+DEBUG	len of buffer now: 8.72
+INFO	[LATENCY] STT processing took 1.252s
+INFO	
+
+
+[TIMEOUT FLUSH] Silence timeout of 1.1s reached. Flushing buffer.
+
+
+
+INFO	
+
+
+[FLUSH] Flushed final TTS grouped chunk: 'some.'
+
+
+
+INFO	[LATENCY] Total time in buffer & TTS queue: 1.256s
+DEBUG	o received from TTS queue.
+DEBUG	PROMPT: 
+DEBUG	CONTEXT:  He seemed cut content with this small group in the villa some
+DEBUG	transcribing 9.72 seconds from 0.00
+DEBUG	GENERATING TTS audio...
+ > Text split to sentences.
+some.
+ > ===========================
+  0%| | 0/1 [00:00<?, ?it/[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.5157 max=0.5303 rms=0.0688 dtype=float32
+Index search FAILED or disabled
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.5157 max=0.5303 rms=0.0661 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.12', '0.16']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.23', '0.26']  thresh=0.52
+Spent time: fea = 0.136s, index = 0.002s, f0 = 0.218s, model = 0.447s
+sola_offset = 81
+Infer time: 0.82
+DEBUG	[RVC] TTS audio processed through RVC.
+INFO	[LATENCY] RVC processing took 1.698s
+DEBUG	Sending audio to TTS client...
+DEBUG	Audio sent to TTS client.
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.5157 max=0.5303 rms=0.0659 dtype=float32
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.5157 max=0.5303 rms=0.0651 dtype=float32
+100%|#| 1/1 [00:01<00:00, 100%|#| 1/1 [00:01<00:00, 
+INFO	[LATENCY] TTS synthesis took 1.255s
+DEBUG	TTS audio generated from text.
+
+Single inference success.
+DEBUG	Resampled TTS audio from 44100Hz to 16000Hz.
+INFO	[LATENCY] Resampling took 0.051s
+cuda_is_available: True
+[AUD_DESTUT] /p probs: ['0.19', '0.25']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.26', '0.36']  thresh=0.52
+Index search FAILED or disabled
+Spent time: fea = 0.071s, index = 0.000s, f0 = 0.028s, model = 0.150s
+sola_offset = 79
+Infer time: 0.38
+DEBUG	[RVC] TTS audio processed through RVC.
+INFO	[LATENCY] RVC processing took 0.382s
+DEBUG	Sending audio to TTS client...
+DEBUG	Audio sent to TTS client.
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.5473 max=0.5577 rms=0.0525 dtype=float32
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.5473 max=0.5577 rms=0.0570 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.17', '0.21']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.37', '0.40']  thresh=0.52
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.5473 max=0.5577 rms=0.0616 dtype=float32
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.5473 max=0.5953 rms=0.0697 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.16', '0.10']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.37', '0.23']  thresh=0.52
+DEBUG	>>>>COMPLETE NOW: (6.52, 8.58, ' kind of loose star on')
+DEBUG	INCOMPLETE: (8.58, 9.7, ' the edge of the')
+DEBUG	--- not enough segments to chunk
+DEBUG	chunking segment
+DEBUG	len of buffer now: 9.72
+INFO	[LATENCY] STT processing took 4.026s
+r_destutter for t from 6.52 to 8.58 success
+wr_destutter for t from 6.52 to 8.58 success
+INFO	[LATENCY] STT get_destutter_info took 0.002s
+6520 8580  kind of loose star on[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.5473 max=0.5953 rms=0.0711 dtype=float32
+
+DEBUG	PROMPT: 
+DEBUG	CONTEXT:  He seemed cut content with this small group in the villa some kind of loose star on
+DEBUG	transcribing 10.72 seconds from 0.00
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.5473 max=0.5953 rms=0.0654 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.11', '0.11']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.40', '0.37']  thresh=0.52
+DEBUG	>>>>COMPLETE NOW: (8.58, 9.52, ' the edge of')
+DEBUG	INCOMPLETE: (9.52, 10.28, ' their')
+DEBUG	--- not enough segments to chunk
+DEBUG	chunking segment
+DEBUG	len of buffer now: 10.72
+INFO	[LATENCY] STT processing took 0.572s
+r_destutter for t from 8.58 to 9.52 success
+wr_destutter for t from 8.58 to 9.52 success
+INFO	[LATENCY] STT get_destutter_info took 0.001s
+8580 9520  the edge of
+INFO	TTS grouped chunk queued: 'kind of loose star on the edge of-'
+INFO	[LATENCY] Total time in buffer & TTS queue: 0.575s
+DEBUG	o received from TTS queue.
+DEBUG	PROMPT: 
+DEBUG	GENERATING TTS audio...
+ > Text split to sentences.
+kind of loose star on the edge of-
+ > ===========================DEBUG	CONTEXT:  He seemed cut content with this small group in the villa some kind of loose star on the edge of
+
+DEBUG	transcribing 11.72 seconds from 0.00
+  0%| | 0/1 [00:00<?, ?it/[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.3932 max=0.5953 rms=0.0584 dtype=float32
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.3932 max=0.5953 rms=0.0514 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.10', '0.12']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.37', '0.39']  thresh=0.52
+100%|#| 1/1 [00:01<00:00, 100%|#| 1/1 [00:01<00:00, 
+INFO	[LATENCY] TTS synthesis took 1.216s
+DEBUG	TTS audio generated from text.
+DEBUG	Resampled TTS audio from 44100Hz to 16000Hz.
+INFO	[LATENCY] Resampling took 0.115s
+cuda_is_available: True
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.3932 max=0.5953 rms=0.0547 dtype=float32
+Index search FAILED or disabled
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.2117 max=0.3187 rms=0.0454 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.36', '0.38']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.39', '0.40']  thresh=0.52
+Spent time: fea = 0.120s, index = 0.001s, f0 = 0.024s, model = 0.318s
+sola_offset = 22
+Infer time: 0.56
+Index search FAILED or disabled
+Spent time: fea = 0.073s, index = 0.002s, f0 = 0.025s, model = 0.154s
+sola_offset = 70
+Infer time: 0.27
+DEBUG	[RVC] TTS audio processed through RVC.
+INFO	[LATENCY] RVC processing took 0.841s
+DEBUG	Sending audio to TTS client...
+DEBUG	Audio sent to TTS client.
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.2117 max=0.3187 rms=0.0459 dtype=float32
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.4216 max=0.4682 rms=0.0544 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.56', '0.72']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.35', '0.21']  thresh=0.52
+DEBUG	>>>>COMPLETE NOW: (9.46, 10.28, ' their')
+DEBUG	INCOMPLETE: (10.28, 11.68, ' system. He was able to use the small group in the villa, some kind of loose star on the edge of the villa, some kind of loose star on the edge of the villa.')
+DEBUG	--- last segment not within commited area
+DEBUG	chunking segment
+DEBUG	len of buffer now: 11.72
+INFO	[LATENCY] STT processing took 2.972s
+r_destutter for t from 9.46 to 10.28 success
+wr_destutter for t from 9.46 to 10.28 success
+INFO	[LATENCY] STT get_destutter_info took 0.001s
+9520 10280  their
+DEBUG	PROMPT: 
+DEBUG	CONTEXT:  He seemed cut content with this small group in the villa some kind of loose star on the edge of their
+DEBUG	transcribing 12.72 seconds from 0.00
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.4216 max=0.4682 rms=0.0546 dtype=float32
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.4216 max=0.4682 rms=0.0523 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.75', '0.33']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.28', '0.26']  thresh=0.52
+DEBUG	>>>>COMPLETE NOW: (None, None, '')
+DEBUG	INCOMPLETE: (10.26, 12.6, ' system this is like')
+DEBUG	--- last segment not within commited area
+DEBUG	chunking segment
+DEBUG	len of buffer now: 12.72
+INFO	[LATENCY] STT processing took 1.101s
+INFO	
+
+
+[TIMEOUT FLUSH] Silence timeout of 1.1s reached. Flushing buffer.
+
+
+
+INFO	
+
+
+[FLUSH] Flushed final TTS grouped chunk: 'their.'
+
+
+
+INFO	[LATENCY] Total time in buffer & TTS queue: 1.102s
+DEBUG	PROMPT: 
+DEBUG	o received from TTS queue.
+DEBUG	GENERATING TTS audio...
+ > Text split to sentences.DEBUG	CONTEXT:  He seemed cut content with this small group in the villa some kind of loose star on the edge of their
+
+their.DEBUG	transcribing 13.72 seconds from 0.00
+
+ > ===========================
+  0%| | 0/1 [00:00<?, ?it/[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.4216 max=0.4682 rms=0.0429 dtype=float32
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.4216 max=0.4682 rms=0.0444 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.45', '0.33']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.23', '0.28']  thresh=0.52
+100%|#| 1/1 [00:00<00:00, 100%|#| 1/1 [00:00<00:00, 
+INFO	[LATENCY] TTS synthesis took 0.959s
+DEBUG	TTS audio generated from text.
+DEBUG	Resampled TTS audio from 44100Hz to 16000Hz.
+INFO	[LATENCY] Resampling took 0.047s
+cuda_is_available: True
+Index search FAILED or disabled
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.4216 max=0.4682 rms=0.0446 dtype=float32
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.2280 max=0.2412 rms=0.0328 dtype=float32
+Spent time: fea = 0.093s, index = 0.000s, f0 = 0.270s, model = 0.248s
+sola_offset = 24
+Infer time: 0.63
+DEBUG	[RVC] TTS audio processed through RVC.
+INFO	[LATENCY] RVC processing took 0.629s
+DEBUG	Sending audio to TTS client...
+DEBUG	Audio sent to TTS client.
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.35', '0.14']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.28', '0.26']  thresh=0.52
+DEBUG	>>>>COMPLETE NOW: (None, None, '')
+DEBUG	INCOMPLETE: (10.28, 13.18, ' system. This is like a...')
+DEBUG	--- last segment not within commited area
+DEBUG	chunking segment
+DEBUG	len of buffer now: 13.72
+INFO	[LATENCY] STT processing took 1.780s
+DEBUG	PROMPT: 
+DEBUG	CONTEXT:  He seemed cut content with this small group in the villa some kind of loose star on the edge of their
+DEBUG	transcribing 14.72 seconds from 0.00
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.2236 max=0.2883 rms=0.0345 dtype=float32
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.2308 max=0.3302 rms=0.0382 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.19', '0.11']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.37', '0.25']  thresh=0.52
+DEBUG	>>>>COMPLETE NOW: (10.28, 12.62, ' system. This is like')
+DEBUG	INCOMPLETE: (12.62, 13.24, ' a…')
+DEBUG	--- segment chunked at 11.32
+DEBUG	chunking segment
+DEBUG	len of buffer now: 3.40
+INFO	[LATENCY] STT processing took 1.165s
+r_destutter for t from 10.28 to 12.62 success
+wr_destutter for t from 10.28 to 12.62 success
+INFO	[LATENCY] STT get_destutter_info took 0.001s
+10280 12620  system. This is like
+DEBUG	PROMPT:  He seemed cut content with this small group in the villa some kind of loose star on the edge of their system.
+DEBUG	CONTEXT:  This is like
+DEBUG	transcribing 4.40 seconds from 11.32
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.2308 max=0.3302 rms=0.0382 dtype=float32
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.3181 max=0.3789 rms=0.0463 dtype=float32
+DEBUG	>>>>COMPLETE NOW: (None, None, '')
+DEBUG	INCOMPLETE: (12.620000000000001, 13.64, ' a...')
+DEBUG	len of buffer now: 4.40
+INFO	[LATENCY] STT processing took 0.564s
+DEBUG	PROMPT:  He seemed cut content with this small group in the villa some kind of loose star on the edge of their system.
+DEBUG	CONTEXT:  This is like
+DEBUG	transcribing 5.40 seconds from 11.32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.11', '0.12']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.23', '0.25']  thresh=0.52
+DEBUG	>>>>COMPLETE NOW: (None, None, '')
+DEBUG	INCOMPLETE: (12.6, 16.3, ' a holiday for him.')
+DEBUG	len of buffer now: 5.40
+INFO	[LATENCY] STT processing took 0.459s
+DEBUG	PROMPT:  He seemed cut content with this small group in the villa some kind of loose star on the edge of their system.
+DEBUG	CONTEXT:  This is like
+DEBUG	transcribing 6.40 seconds from 11.32
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.3181 max=0.3789 rms=0.0438 dtype=float32
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.3781 max=0.4202 rms=0.0551 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.10', '0.14']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.32', '0.41']  thresh=0.52
+DEBUG	>>>>COMPLETE NOW: (12.6, 16.12, ' a holiday for')
+DEBUG	INCOMPLETE: (16.12, 17.7, ' him after the W war.')
+DEBUG	len of buffer now: 6.40
+INFO	[LATENCY] STT processing took 0.558s
+r_destutter for t from 12.6 to 16.12 success
+wr_destutter for t from 12.6 to 16.12 success
+INFO	[LATENCY] STT get_destutter_info took 0.001s
+12620 16120  a holiday for
+INFO	TTS grouped chunk queued: 'system. This is like a holiday for-'
+INFO	[LATENCY] Total time in buffer & TTS queue: 1.585s
+DEBUG	o received from TTS queue.
+DEBUG	PROMPT:  He seemed cut content with this small group in the villa some kind of loose star on the edge of their system.
+DEBUG	GENERATING TTS audio...
+ > Text split to sentences.DEBUG	CONTEXT:  This is like a holiday for
+
+DEBUG	transcribing 7.40 seconds from 11.32
+system. This is like a holiday for-
+ > ===========================
+  0%| | 0/1 [00:00<?, ?it/DEBUG	>>>>COMPLETE NOW: (16.1, 17.8, ' him after the W war.')
+DEBUG	INCOMPLETE: (None, None, '')
+DEBUG	len of buffer now: 7.40
+INFO	[LATENCY] STT processing took 0.655s
+r_destutter for t from 16.1 to 17.8 success
+wr_destutter for t from 16.1 to 17.8 success
+INFO	[LATENCY] STT get_destutter_info took 0.001s
+16120 17800  him after the W war.
+INFO	TTS grouped chunk queued: 'him after the W war.'
+DEBUG	PROMPT:  He seemed cut content with this small group in the villa some kind of loose star on the edge of their system.
+DEBUG	CONTEXT:  This is like a holiday for him after the W war.
+DEBUG	transcribing 8.40 seconds from 11.32
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.3781 max=0.4202 rms=0.0600 dtype=float32
+100%|#| 1/1 [00:00<00:00, 100%|#| 1/1 [00:00<00:00, 
+INFO	[LATENCY] TTS synthesis took 1.015s
+DEBUG	TTS audio generated from text.
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.3781 max=0.4202 rms=0.0565 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.12', '0.14']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.40', '0.42']  thresh=0.52
+DEBUG	Resampled TTS audio from 44100Hz to 16000Hz.
+INFO	[LATENCY] Resampling took 0.123s
+INFO	[LATENCY] Total time in buffer & TTS queue: 0.484s
+cuda_is_available: TrueDEBUG	o received from TTS queue.
+
+DEBUG	GENERATING TTS audio...
+ > Text split to sentences.
+him after the W war.
+ > ===========================
+  0%| | 0/1 [00:00<?, ?it/Index search FAILED or disabled
+DEBUG	>>>>COMPLETE NOW: (None, None, '')
+DEBUG	INCOMPLETE: (18.76, 19.439999999999998, ' mud.')
+DEBUG	--- not enough segments to chunk
+DEBUG	chunking segment
+DEBUG	len of buffer now: 8.40
+INFO	[LATENCY] STT processing took 0.669s
+DEBUG	PROMPT:  He seemed cut content with this small group in the villa some kind of loose star on the edge of their system.
+DEBUG	CONTEXT:  This is like a holiday for him after the W war.
+DEBUG	transcribing 9.40 seconds from 11.32
+Spent time: fea = 0.091s, index = 0.001s, f0 = 0.016s, model = 0.192s
+sola_offset = 160
+Infer time: 0.55
+Index search FAILED or disabled
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.3781 max=0.4202 rms=0.0631 dtype=float32
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.3781 max=0.4202 rms=0.0552 dtype=float32
+Spent time: fea = 0.104s, index = 0.000s, f0 = 0.029s, model = 0.295s
+sola_offset = 117
+Infer time: 0.45
+DEBUG	[RVC] TTS audio processed through RVC.
+INFO	[LATENCY] RVC processing took 1.004s
+DEBUG	Sending audio to TTS client...
+DEBUG	Audio sent to TTS client.
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.09', '0.07']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.28', '0.14']  thresh=0.52
+DEBUG	>>>>COMPLETE NOW: (None, None, '')
+DEBUG	INCOMPLETE: (18.76, 20.16, ' mud and...')
+DEBUG	--- not enough segments to chunk
+DEBUG	chunking segment
+DEBUG	len of buffer now: 9.40
+INFO	[LATENCY] STT processing took 0.934s
+DEBUG	PROMPT:  He seemed cut content with this small group in the villa some kind of loose star on the edge of their system.
+DEBUG	CONTEXT:  This is like a holiday for him after the W war.
+DEBUG	transcribing 10.40 seconds from 11.32
+100%|#| 1/1 [00:01<00:00, 100%|#| 1/1 [00:01<00:00, 
+INFO	[LATENCY] TTS synthesis took 1.487s
+DEBUG	TTS audio generated from text.
+DEBUG	Resampled TTS audio from 44100Hz to 16000Hz.
+INFO	[LATENCY] Resampling took 0.106s
+cuda_is_available: True
+DEBUG	>>>>COMPLETE NOW: (18.76, 19.58, ' mud')
+DEBUG	INCOMPLETE: (19.58, 21.200000000000003, ' and rivers.')
+DEBUG	--- not enough segments to chunk
+DEBUG	chunking segment
+DEBUG	len of buffer now: 10.40
+INFO	[LATENCY] STT processing took 0.544s
+r_destutter for t from 18.76 to 19.58 success
+wr_destutter for t from 18.76 to 19.58 success
+Index search FAILED or disabledINFO	[LATENCY] STT get_destutter_info took 0.003s
+
+18760 19580  mud
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.3781 max=0.4202 rms=0.0630 dtype=float32DEBUG	PROMPT:  He seemed cut content with this small group in the villa some kind of loose star on the edge of their system.
+
+DEBUG	CONTEXT:  This is like a holiday for him after the W war. mud
+DEBUG	transcribing 11.40 seconds from 11.32
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.3097 max=0.4415 rms=0.0557 dtype=float32
+Spent time: fea = 0.060s, index = 0.001s, f0 = 0.023s, model = 0.299s
+sola_offset = 40
+Infer time: 0.50
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.11', '0.12']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.21', '0.21']  thresh=0.52
+Index search FAILED or disabled
+Spent time: fea = 0.093s, index = 0.000s, f0 = 0.017s, model = 0.162s
+sola_offset = 31
+Infer time: 0.29
+DEBUG	[RVC] TTS audio processed through RVC.
+INFO	[LATENCY] RVC processing took 0.800s
+DEBUG	Sending audio to TTS client...
+DEBUG	Audio sent to TTS client.
+DEBUG	>>>>COMPLETE NOW: (19.58, 20.14, ' and')
+DEBUG	INCOMPLETE: (20.14, 21.9, ' rivers and bark.')
+DEBUG	--- not enough segments to chunk
+DEBUG	chunking segment
+DEBUG	len of buffer now: 11.40
+INFO	[LATENCY] STT processing took 0.827s
+r_destutter for t from 19.58 to 20.14 success
+wr_destutter for t from 19.58 to 20.14 success
+INFO	[LATENCY] STT get_destutter_info took 0.001s
+19580 20140  and
+INFO	TTS grouped chunk queued: 'mud and-'
+INFO	[LATENCY] Total time in buffer & TTS queue: 0.832s
+DEBUG	PROMPT:  He seemed cut content with this small group in the villa some kind of loose star on the edge of their system.
+DEBUG	o received from TTS queue.
+DEBUG	CONTEXT:  This is like a holiday for him after the W war. mud and
+DEBUG	GENERATING TTS audio...
+ > Text split to sentences.DEBUG	transcribing 12.40 seconds from 11.32
+
+mud and-
+ > ===========================
+  0%| | 0/1 [00:00<?, ?it/[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.3097 max=0.4415 rms=0.0474 dtype=float32
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.6214 max=0.4480 rms=0.0635 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.15', '0.15']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.39', '0.45']  thresh=0.52
+DEBUG	>>>>COMPLETE NOW: (20.14, 21.560000000000002, ' rivers and')
+DEBUG	INCOMPLETE: (21.560000000000002, 21.96, ' bridges.')
+DEBUG	--- not enough segments to chunk
+DEBUG	chunking segment
+DEBUG	len of buffer now: 12.40
+INFO	[LATENCY] STT processing took 0.816s
+r_destutter for t from 20.14 to 21.560000000000002 success
+wr_destutter for t from 20.14 to 21.560000000000002 success
+INFO	[LATENCY] STT get_destutter_info took 0.002s
+100%|#| 1/1 [00:00<00:00, 20140 21560  rivers and
+100%|#| 1/1 [00:00<00:00, 
+DEBUG	PROMPT:  He seemed cut content with this small group in the villa some kind of loose star on the edge of their system.
+DEBUG	CONTEXT:  This is like a holiday for him after the W war. mud and rivers and
+DEBUG	transcribing 13.40 seconds from 11.32
+INFO	[LATENCY] TTS synthesis took 0.863s
+DEBUG	TTS audio generated from text.
+DEBUG	Resampled TTS audio from 44100Hz to 16000Hz.
+INFO	[LATENCY] Resampling took 0.043s
+cuda_is_available: True
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.6214 max=0.4480 rms=0.0569 dtype=float32
+Index search FAILED or disabled
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.6214 max=0.4480 rms=0.0577 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.16', '0.16']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.56', '0.59']  thresh=0.52
+b_destutter for t from 1.5 to 2.0 success
+Spent time: fea = 0.100s, index = 0.000s, f0 = 0.018s, model = 0.186s
+sola_offset = 55
+Infer time: 0.54
+DEBUG	[RVC] TTS audio processed through RVC.
+INFO	[LATENCY] RVC processing took 0.539s
+DEBUG	Sending audio to TTS client...
+DEBUG	Audio sent to TTS client.
+DEBUG	>>>>COMPLETE NOW: (21.560000000000002, 23.62, ' bridges.')
+DEBUG	INCOMPLETE: (23.62, 24.68, ' He enters the building.')
+DEBUG	--- segment chunked at 23.62
+DEBUG	chunking segment
+DEBUG	len of buffer now: 1.10
+INFO	[LATENCY] STT processing took 1.197s
+r_destutter for t from 21.560000000000002 to 23.62 success
+wr_destutter for t from 21.560000000000002 to 23.62 success
+INFO	[LATENCY] STT get_destutter_info took 0.001s
+21560 23620  bridges.
+INFO	TTS grouped chunk queued: 'rivers and bridges.'
+INFO	[LATENCY] Total time in buffer & TTS queue: 1.200s
+DEBUG	o received from TTS queue.
+DEBUG	PROMPT:  cut content with this small group in the villa some kind of loose star on the edge of their system. This is like a holiday for him after the W war. mud and rivers and
+DEBUG	GENERATING TTS audio...
+ > Text split to sentences.DEBUG	CONTEXT:  bridges.
+
+DEBUG	transcribing 2.10 seconds from 23.62
+rivers and bridges.
+ > ===========================
+  0%| | 0/1 [00:00<?, ?it/[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.6214 max=0.4480 rms=0.0541 dtype=float32
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.6214 max=0.4501 rms=0.0589 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.27', '0.19']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.59', '0.59']  thresh=0.52
+b_destutter for t from 1.5 to 2.0 success
+DEBUG	>>>>COMPLETE NOW: (None, None, '')
+DEBUG	INCOMPLETE: (23.62, 24.900000000000002, ' bridges. He enters the')
+DEBUG	len of buffer now: 2.10
+INFO	[LATENCY] STT processing took 0.664s
+DEBUG	PROMPT:  cut content with this small group in the villa some kind of loose star on the edge of their system. This is like a holiday for him after the W war. mud and rivers and
+DEBUG	CONTEXT:  bridges.
+DEBUG	transcribing 3.10 seconds from 23.62
+100%|#| 1/1 [00:01<00:00, 100%|#| 1/1 [00:01<00:00, 
+INFO	[LATENCY] TTS synthesis took 1.052s
+DEBUG	TTS audio generated from text.
+DEBUG	Resampled TTS audio from 44100Hz to 16000Hz.
+INFO	[LATENCY] Resampling took 0.061s
+cuda_is_available: True
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.6214 max=0.4501 rms=0.0624 dtype=float32
+DEBUG	>>>>COMPLETE NOW: (23.62, 24.880000000000003, ' bridges. He enters the')
+DEBUG	INCOMPLETE: (24.880000000000003, 26.18, ' hook.')
+DEBUG	len of buffer now: 3.10
+INFO	[LATENCY] STT processing took 0.549s
+r_destutter for t from 23.62 to 24.880000000000003 success
+wr_destutter for t from 23.62 to 24.880000000000003 success
+INFO	[LATENCY] STT get_destutter_info took 0.001s
+23620 24880  bridges. He enters the
+DEBUG	PROMPT:  content with this small group in the villa some kind of loose star on the edge of their system. This is like a holiday for him after the W war. mud and rivers and bridges.
+DEBUG	CONTEXT:  bridges. He enters the
+DEBUG	transcribing 4.10 seconds from 23.62
+
+Single inference success.
+Index search FAILED or disabled[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.6214 max=0.4501 rms=0.0629 dtype=float32
+
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.15', '0.13']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.53', '0.45']  thresh=0.52
+Spent time: fea = 0.112s, index = 0.001s, f0 = 0.018s, model = 0.420s
+sola_offset = 118
+Infer time: 0.56
+Index search FAILED or disabled
+DEBUG	>>>>COMPLETE NOW: (None, None, '')
+DEBUG	INCOMPLETE: (24.92, 27.700000000000003, ' hook house only when in')
+DEBUG	len of buffer now: 4.10
+INFO	[LATENCY] STT processing took 0.665s
+DEBUG	PROMPT:  content with this small group in the villa some kind of loose star on the edge of their system. This is like a holiday for him after the W war. mud and rivers and bridges.
+DEBUG	CONTEXT:  bridges. He enters the
+DEBUG	transcribing 5.10 seconds from 23.62
+Spent time: fea = 0.066s, index = 0.001s, f0 = 0.018s, model = 0.141s
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.3421 max=0.4501 rms=0.0455 dtype=float32
+sola_offset = 160
+Infer time: 0.51
+DEBUG	[RVC] TTS audio processed through RVC.
+INFO	[LATENCY] RVC processing took 1.071s
+DEBUG	Sending audio to TTS client...
+DEBUG	Audio sent to TTS client.
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.3421 max=0.4501 rms=0.0490 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.16', '0.09']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.52', '0.32']  thresh=0.52
+DEBUG	>>>>COMPLETE NOW: (None, None, '')
+DEBUG	INCOMPLETE: (24.94, 28.64, ' hug house only when invited in.')
+DEBUG	len of buffer now: 5.10
+INFO	[LATENCY] STT processing took 0.545s
+INFO	
+
+
+[TIMEOUT FLUSH] Silence timeout of 1.1s reached. Flushing buffer.
+
+
+
+INFO	
+
+
+[FLUSH] Flushed final TTS grouped chunk: 'bridges. He enters the.'
+
+
+
+INFO	[LATENCY] Total time in buffer & TTS queue: 1.212s
+DEBUG	PROMPT:  content with this small group in the villa some kind of loose star on the edge of their system. This is like a holiday for him after the W war. mud and rivers and bridges.
+DEBUG	o received from TTS queue.
+DEBUG	CONTEXT:  bridges. He enters the
+DEBUG	GENERATING TTS audio...
+ > Text split to sentences.DEBUG	transcribing 5.70 seconds from 23.62
+
+bridges. He enters the.
+ > ===========================
+  0%| | 0/1 [00:00<?, ?it/[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.3421 max=0.4501 rms=0.0571 dtype=float32
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.3047 max=0.3530 rms=0.0493 dtype=float32
+DEBUG	>>>>COMPLETE NOW: (24.92, 28.34, ' hug house only when invited')
+DEBUG	INCOMPLETE: (28.34, 29.240000000000002, ' in just')
+DEBUG	len of buffer now: 5.70
+INFO	[LATENCY] STT processing took 0.989s
+r_destutter for t from 24.92 to 28.34 success
+wr_destutter for t from 24.92 to 28.34 success
+INFO	[LATENCY] STT get_destutter_info took 0.002s
+24920 28340  hug house only when invited
+Single inference success.
+
+DEBUG	PROMPT:  content with this small group in the villa some kind of loose star on the edge of their system. This is like a holiday for him after the W war. mud and rivers and bridges.
+[AUD_DESTUT] /p probs: ['0.08', '0.10']  thresh=0.63DEBUG	CONTEXT:  bridges. He enters the hug house only when invited
+
+DEBUG	transcribing 6.30 seconds from 23.62
+[AUD_DESTUT] /b probs: ['0.25', '0.32']  thresh=0.52
+100%|#| 1/1 [00:01<00:00, 100%|#| 1/1 [00:01<00:00, 
+INFO	[LATENCY] TTS synthesis took 1.369s
+DEBUG	TTS audio generated from text.
+DEBUG	Resampled TTS audio from 44100Hz to 16000Hz.
+INFO	[LATENCY] Resampling took 0.088s
+cuda_is_available: True
+Index search FAILED or disabled
+DEBUG	>>>>COMPLETE NOW: (None, None, '')
+DEBUG	INCOMPLETE: (28.36, 29.740000000000002, ' in, just a...')
+DEBUG	len of buffer now: 6.30
+INFO	[LATENCY] STT processing took 0.643s
+DEBUG	PROMPT:  content with this small group in the villa some kind of loose star on the edge of their system. This is like a holiday for him after the W war. mud and rivers and bridges.
+DEBUG	CONTEXT:  bridges. He enters the hug house only when invited
+DEBUG	transcribing 7.30 seconds from 23.62
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.3047 max=0.3530 rms=0.0496 dtype=float32
+Spent time: fea = 0.098s, index = 0.002s, f0 = 0.018s, model = 0.197s
+sola_offset = 23
+Infer time: 0.54
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.3047 max=0.3530 rms=0.0500 dtype=float32
+Index search FAILED or disabled
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.10', '0.09']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.21', '0.14']  thresh=0.52
+Spent time: fea = 0.158s, index = 0.000s, f0 = 0.022s, model = 0.180s
+sola_offset = 129
+Infer time: 0.38
+DEBUG	[RVC] TTS audio processed through RVC.
+INFO	[LATENCY] RVC processing took 0.920s
+DEBUG	Sending audio to TTS client...
+DEBUG	Audio sent to TTS client.
+DEBUG	>>>>COMPLETE NOW: (28.34, 29.380000000000003, ' in, just')
+DEBUG	INCOMPLETE: (29.380000000000003, 30.8, ' a tentative.')
+DEBUG	len of buffer now: 7.30
+INFO	[LATENCY] STT processing took 0.798s
+r_destutter for t from 28.34 to 29.380000000000003 success
+wr_destutter for t from 28.34 to 29.380000000000003 success
+INFO	[LATENCY] STT get_destutter_info took 0.002s
+28340 29380  in, just
+INFO	TTS grouped chunk queued: 'hug house only when invited in, just-'
+INFO	[LATENCY] Total time in buffer & TTS queue: 1.447s
+DEBUG	PROMPT:  content with this small group in the villa some kind of loose star on the edge of their system. This is like a holiday for him after the W war. mud and rivers and bridges.
+DEBUG	o received from TTS queue.
+DEBUG	CONTEXT:  bridges. He enters the hug house only when invited in, just
+DEBUG	GENERATING TTS audio...
+ > Text split to sentences.DEBUG	transcribing 8.30 seconds from 23.62
+
+hug house only when invited in, just-
+ > ===========================
+  0%| | 0/1 [00:00<?, ?it/[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.3047 max=0.3530 rms=0.0508 dtype=float32
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.3047 max=0.3530 rms=0.0499 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.08', '0.09']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.18', '0.29']  thresh=0.52
+DEBUG	>>>>COMPLETE NOW: (29.380000000000003, 29.66, ' a')
+DEBUG	INCOMPLETE: (29.66, 31.560000000000002, ' tentative visitor.')
+DEBUG	--- not enough segments to chunk
+DEBUG	chunking segment
+DEBUG	len of buffer now: 8.30
+INFO	[LATENCY] STT processing took 0.787s
+r_destutter for t from 29.380000000000003 to 29.66 success
+wr_destutter for t from 29.380000000000003 to 29.66 success
+INFO	[LATENCY] STT get_destutter_info took 0.002s
+29380 29660  a
+DEBUG	PROMPT:  content with this small group in the villa some kind of loose star on the edge of their system. This is like a holiday for him after the W war. mud and rivers and bridges.
+DEBUG	CONTEXT:  bridges. He enters the hug house only when invited in, just a
+DEBUG	transcribing 9.30 seconds from 23.62
+100%|#| 1/1 [00:01<00:00, 100%|#| 1/1 [00:01<00:00, 
+INFO	[LATENCY] TTS synthesis took 1.146s
+DEBUG	TTS audio generated from text.
+DEBUG	Resampled TTS audio from 44100Hz to 16000Hz.
+INFO	[LATENCY] Resampling took 0.114s
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.2687 max=0.3136 rms=0.0447 dtype=float32cuda_is_available: True
+
+Index search FAILED or disabled
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.2687 max=0.3136 rms=0.0438 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.17', '0.27']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.39', '0.62']  thresh=0.52
+DEBUG	>>>>COMPLETE NOW: (29.66, 31.6, ' tentative visitor.')
+DEBUG	INCOMPLETE: (31.9, 32.7, ' The way he had-')
+DEBUG	--- not enough segments to chunk
+DEBUG	chunking segment
+DEBUG	len of buffer now: 9.30
+INFO	[LATENCY] STT processing took 0.757s
+r_destutter for t from 29.66 to 31.6 success
+wr_destutter for t from 29.66 to 31.6 success
+INFO	[LATENCY] STT get_destutter_info took 0.001s
+29660 31600  tentative visitor.
+INFO	TTS grouped chunk queued: 'a tentative visitor.'
+INFO	[LATENCY] Total time in buffer & TTS queue: 0.760s
+DEBUG	o received from TTS queue.
+DEBUG	GENERATING TTS audio...
+ > Text split to sentences.DEBUG	PROMPT:  content with this small group in the villa some kind of loose star on the edge of their system. This is like a holiday for him after the W war. mud and rivers and bridges.
+DEBUG	CONTEXT:  bridges. He enters the hug house only when invited in, just a tentative visitor.
+
+a tentative visitor.DEBUG	transcribing 10.30 seconds from 23.62
+
+ > ===========================
+  0%| | 0/1 [00:00<?, ?it/Spent time: fea = 0.085s, index = 0.000s, f0 = 0.015s, model = 0.192s
+sola_offset = 32
+Infer time: 0.31
+Index search FAILED or disabled
+Spent time: fea = 0.194s, index = 0.001s, f0 = 0.140s, model = 0.213s
+sola_offset = 150
+Infer time: 0.57
+DEBUG	[RVC] TTS audio processed through RVC.
+INFO	[LATENCY] RVC processing took 0.889s
+DEBUG	Sending audio to TTS client...
+DEBUG	Audio sent to TTS client.
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.2687 max=0.3136 rms=0.0389 dtype=float32
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.2415 max=0.2356 rms=0.0342 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.25', '0.29']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.47', '0.33']  thresh=0.52
+100%|#| 1/1 [00:01<00:00, 100%|#| 1/1 [00:01<00:00, DEBUG	>>>>COMPLETE NOW: (31.94, 32.620000000000005, ' The way he had')
+
+DEBUG	INCOMPLETE: (32.620000000000005, 33.32, ' done.')
+DEBUG	--- not enough segments to chunk
+DEBUG	chunking segment
+DEBUG	len of buffer now: 10.30
+INFO	[LATENCY] STT processing took 1.091s
+r_destutter for t from 31.94 to 32.620000000000005 success
+wr_destutter for t from 31.94 to 32.620000000000005 success
+INFO	[LATENCY] STT get_destutter_info took 0.001s
+31940 32620  The way he had
+DEBUG	PROMPT:  content with this small group in the villa some kind of loose star on the edge of their system. This is like a holiday for him after the W war. mud and rivers and bridges.
+DEBUG	CONTEXT:  bridges. He enters the hug house only when invited in, just a tentative visitor. The way he had
+DEBUG	transcribing 11.30 seconds from 23.62
+INFO	[LATENCY] TTS synthesis took 1.137s
+DEBUG	TTS audio generated from text.
+DEBUG	Resampled TTS audio from 44100Hz to 16000Hz.
+INFO	[LATENCY] Resampling took 0.076s
+cuda_is_available: True
+Index search FAILED or disabled
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.2415 max=0.2520 rms=0.0379 dtype=float32
+Spent time: fea = 0.083s, index = 0.000s, f0 = 0.025s, model = 0.309s
+sola_offset = 139
+Infer time: 0.66
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.2035 max=0.2520 rms=0.0402 dtype=float32
+Index search FAILED or disabled
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.34', '0.21']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.34', '0.21']  thresh=0.52
+Spent time: fea = 0.125s, index = 0.001s, f0 = 0.020s, model = 0.206s
+sola_offset = 58
+Infer time: 0.36
+DEBUG	[RVC] TTS audio processed through RVC.
+INFO	[LATENCY] RVC processing took 1.027s
+DEBUG	Sending audio to TTS client...
+DEBUG	Audio sent to TTS client.
+DEBUG	>>>>COMPLETE NOW: (None, None, '')
+DEBUG	INCOMPLETE: (32.620000000000005, 34.9, ' done that for first...')
+DEBUG	--- not enough segments to chunk
+DEBUG	chunking segment
+DEBUG	len of buffer now: 11.30
+INFO	[LATENCY] STT processing took 1.230s
+INFO	
+
+
+[TIMEOUT FLUSH] Silence timeout of 1.1s reached. Flushing buffer.
+
+
+
+INFO	
+
+
+[FLUSH] Flushed final TTS grouped chunk: 'The way he had.'
+
+
+
+INFO	[LATENCY] Total time in buffer & TTS queue: 1.231s
+DEBUG	PROMPT:  content with this small group in the villa some kind of loose star on the edge of their system. This is like a holiday for him after the W war. mud and rivers and bridges.
+DEBUG	o received from TTS queue.
+DEBUG	CONTEXT:  bridges. He enters the hug house only when invited in, just a tentative visitor. The way he had
+DEBUG	GENERATING TTS audio...
+ > Text split to sentences.
+DEBUG	transcribing 12.30 seconds from 23.62
+The way he had.
+ > ===========================
+  0%| | 0/1 [00:00<?, ?it/[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.2035 max=0.2520 rms=0.0356 dtype=float32
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.2035 max=0.2520 rms=0.0355 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.23', '0.10']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.21', '0.19']  thresh=0.52
+100%|#| 1/1 [00:01<00:00, 100%|#| 1/1 [00:01<00:00, 
+INFO	[LATENCY] TTS synthesis took 1.148s
+DEBUG	TTS audio generated from text.
+DEBUG	>>>>COMPLETE NOW: (32.620000000000005, 34.1, ' done that')
+DEBUG	INCOMPLETE: (34.1, 35.9, ' first night when he had followed the-')
+DEBUG	--- not enough segments to chunk
+DEBUG	chunking segment
+DEBUG	len of buffer now: 12.30
+INFO	[LATENCY] STT processing took 1.167s
+r_destutter for t from 32.620000000000005 to 34.1 success
+wr_destutter for t from 32.620000000000005 to 34.1 success
+INFO	[LATENCY] STT get_destutter_info took 0.001s
+32620 34100  done that
+DEBUG	PROMPT:  content with this small group in the villa some kind of loose star on the edge of their system. This is like a holiday for him after the W war. mud and rivers and bridges.
+DEBUG	CONTEXT:  bridges. He enters the hug house only when invited in, just a tentative visitor. The way he had done that
+DEBUG	transcribing 13.30 seconds from 23.62
+DEBUG	Resampled TTS audio from 44100Hz to 16000Hz.
+INFO	[LATENCY] Resampling took 0.070s
+cuda_is_available: True
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.2035 max=0.2520 rms=0.0359 dtype=float32
+Index search FAILED or disabled
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.2035 max=0.2520 rms=0.0361 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.22', '0.42']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.12', '0.06']  thresh=0.52
+Spent time: fea = 0.200s, index = 0.000s, f0 = 0.022s, model = 0.189s
+sola_offset = 136
+Infer time: 0.59
+DEBUG	[RVC] TTS audio processed through RVC.
+INFO	[LATENCY] RVC processing took 0.597s
+DEBUG	Sending audio to TTS client...
+DEBUG	Audio sent to TTS client.
+DEBUG	>>>>COMPLETE NOW: (34.1, 35.92, ' first night when he had followed the')
+DEBUG	INCOMPLETE: (35.92, 36.58, ' fee-fu-fu-fu.')
+DEBUG	--- not enough segments to chunk
+DEBUG	chunking segment
+DEBUG	len of buffer now: 13.30
+INFO	[LATENCY] STT processing took 0.982s
+r_destutter for t from 34.1 to 35.92 success
+wr_destutter for t from 34.1 to 35.92 success
+INFO	[LATENCY] STT get_destutter_info took 0.001s
+34100 35920  first night when he had followed the
+INFO	TTS grouped chunk queued: 'done that first night when he had followed the-'
+INFO	[LATENCY] Total time in buffer & TTS queue: 0.984s
+DEBUG	o received from TTS queue.
+DEBUG	PROMPT:  content with this small group in the villa some kind of loose star on the edge of their system. This is like a holiday for him after the W war. mud and rivers and bridges.
+DEBUG	GENERATING TTS audio...
+ > Text split to sentences.DEBUG	CONTEXT:  bridges. He enters the hug house only when invited in, just a tentative visitor. The way he had done that first night when he had followed the
+
+DEBUG	transcribing 14.30 seconds from 23.62
+done that first night when he had followed the-
+ > ===========================
+  0%| | 0/1 [00:00<?, ?it/[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.1468 max=0.2297 rms=0.0308 dtype=float32
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.4142 max=0.4682 rms=0.0258 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.73', '0.68']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.09', '0.14']  thresh=0.52
+p_destutter for t from 1.5 to 2.0 success
+100%|#| 1/1 [00:00<00:00, 100%|#| 1/1 [00:00<00:00, 
+INFO	[LATENCY] TTS synthesis took 1.001s
+DEBUG	TTS audio generated from text.
+DEBUG	>>>>COMPLETE NOW: (None, None, '')
+DEBUG	INCOMPLETE: (35.94, 37.9, ' faltering sound of...')
+DEBUG	--- not enough segments to chunk
+DEBUG	chunking segment
+DEBUG	len of buffer now: 14.30
+INFO	[LATENCY] STT processing took 1.051s
+DEBUG	PROMPT:  content with this small group in the villa some kind of loose star on the edge of their system. This is like a holiday for him after the W war. mud and rivers and bridges.
+DEBUG	CONTEXT:  bridges. He enters the hug house only when invited in, just a tentative visitor. The way he had done that first night when he had followed the
+DEBUG	transcribing 15.30 seconds from 23.62
+DEBUG	Resampled TTS audio from 44100Hz to 16000Hz.
+INFO	[LATENCY] Resampling took 0.120s
+cuda_is_available: True
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.4920 max=0.5478 rms=0.0366 dtype=float32
+Index search FAILED or disabled
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.4920 max=0.5478 rms=0.0380 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.49', '0.50']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.20', '0.26']  thresh=0.52
+Spent time: fea = 0.113s, index = 0.001s, f0 = 0.021s, model = 0.238s
+sola_offset = 85
+Infer time: 0.63
+Index search FAILED or disabled
+Spent time: fea = 0.077s, index = 0.000s, f0 = 0.017s, model = 0.168s
+sola_offset = 160
+Infer time: 0.28
+Index search FAILED or disabled
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.4920 max=0.5478 rms=0.0390 dtype=float32
+Spent time: fea = 0.066s, index = 0.001s, f0 = 0.023s, model = 0.249s
+sola_offset = 64
+Infer time: 0.35
+DEBUG	[RVC] TTS audio processed through RVC.
+INFO	[LATENCY] RVC processing took 1.267s
+DEBUG	Sending audio to TTS client...
+DEBUG	Audio sent to TTS client.
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.4920 max=0.5478 rms=0.0385 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.21', '0.11']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.40', '0.22']  thresh=0.52
+DEBUG	>>>>COMPLETE NOW: (35.94, 37.68, ' faltering sound')
+DEBUG	INCOMPLETE: (37.68, 38.38, ' of ha.')
+DEBUG	--- not enough segments to chunk
+DEBUG	chunking segment
+DEBUG	len of buffer now: 15.30
+INFO	[LATENCY] STT processing took 1.486s
+r_destutter for t from 35.94 to 37.68 success
+wr_destutter for t from 35.94 to 37.68 success
+INFO	[LATENCY] STT get_destutter_info took 0.001s
+35940 37680  faltering sound
+DEBUG	PROMPT:  content with this small group in the villa some kind of loose star on the edge of their system. This is like a holiday for him after the W war. mud and rivers and bridges.
+DEBUG	CONTEXT:  bridges. He enters the hug house only when invited in, just a tentative visitor. The way he had done that first night when he had followed the faltering sound
+DEBUG	transcribing 16.30 seconds from 23.62
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.4920 max=0.5478 rms=0.0423 dtype=float32
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.4920 max=0.5478 rms=0.0401 dtype=float32
+DEBUG	>>>>COMPLETE NOW: (37.7, 38.0, ' of')
+DEBUG	INCOMPLETE: (38.0, 39.900000000000006, " Hana's piano.")
+DEBUG	--- not enough segments to chunk
+DEBUG	chunking segment
+DEBUG	len of buffer now: 16.30
+INFO	[LATENCY] STT processing took 0.784s
+r_destutter for t from 37.7 to 38.0 success
+wr_destutter for t from 37.7 to 38.0 success
+INFO	[LATENCY] STT get_destutter_info took 0.001s
+37700 38000  of
+INFO	TTS grouped chunk queued: 'faltering sound of-'
+INFO	[LATENCY] Total time in buffer & TTS queue: 0.788s
+DEBUG	o received from TTS queue.
+DEBUG	PROMPT:  content with this small group in the villa some kind of loose star on the edge of their system. This is like a holiday for him after the W war. mud and rivers and bridges.
+DEBUG	GENERATING TTS audio...
+ > Text split to sentences.DEBUG	CONTEXT:  bridges. He enters the hug house only when invited in, just a tentative visitor. The way he had done that first night when he had followed the faltering sound of
+
+DEBUG	transcribing 16.92 seconds from 23.62
+faltering sound of-
+ > ===========================
+  0%| | 0/1 [00:00<?, ?it/
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.12', '0.11']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.16', '0.17']  thresh=0.52
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.2141 max=0.2396 rms=0.0351 dtype=float32
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.2141 max=0.2396 rms=0.0306 dtype=float32
+100%|#| 1/1 [00:01<00:00, 100%|#| 1/1 [00:01<00:00, 
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.12', '0.19']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.21', '0.25']  thresh=0.52
+INFO	[LATENCY] TTS synthesis took 1.191s
+DEBUG	TTS audio generated from text.
+DEBUG	Resampled TTS audio from 44100Hz to 16000Hz.
+INFO	[LATENCY] Resampling took 0.120s
+cuda_is_available: True
+Index search FAILED or disabled
+DEBUG	>>>>COMPLETE NOW: (38.0, 40.120000000000005, " Hana's piano.")
+DEBUG	INCOMPLETE: (None, None, '')
+DEBUG	--- not enough segments to chunk
+DEBUG	chunking segment
+DEBUG	len of buffer now: 16.92
+INFO	[LATENCY] STT processing took 1.522s
+r_destutter for t from 38.0 to 40.120000000000005 success
+wr_destutter for t from 38.0 to 40.120000000000005 success
+INFO	[LATENCY] STT get_destutter_info took 0.002s
+38000 40120  Hana's piano.
+INFO	TTS grouped chunk queued: "Hana's piano."
+INFO	[LATENCY] Total time in buffer & TTS queue: 0.001s
+DEBUG	o received from TTS queue.
+DEBUG	PROMPT:  content with this small group in the villa some kind of loose star on the edge of their system. This is like a holiday for him after the W war. mud and rivers and bridges.
+DEBUG	GENERATING TTS audio...
+DEBUG	CONTEXT:  bridges. He enters the hug house only when invited in, just a tentative visitor. The way he had done that first night when he had followed the faltering sound of Hana's piano.
+ > Text split to sentences.DEBUG	transcribing 17.92 seconds from 23.62
+
+Hana's piano.
+ > ===========================
+  0%| | 0/1 [00:00<?, ?it/Spent time: fea = 0.093s, index = 0.001s, f0 = 0.023s, model = 0.344s
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.3533 max=0.4662 rms=0.0377 dtype=float32
+sola_offset = 36
+Infer time: 0.61
+Index search FAILED or disabled
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.3533 max=0.4662 rms=0.0392 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.15', '0.11']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.28', '0.24']  thresh=0.52
+Spent time: fea = 0.129s, index = 0.001s, f0 = 0.026s, model = 0.358s
+sola_offset = 133
+Infer time: 0.53
+DEBUG	[RVC] TTS audio processed through RVC.
+INFO	[LATENCY] RVC processing took 1.147s
+DEBUG	Sending audio to TTS client...
+DEBUG	Audio sent to TTS client.
+100%|#| 1/1 [00:01<00:00, 100%|#| 1/1 [00:01<00:00, 
+INFO	[LATENCY] TTS synthesis took 1.295s
+DEBUG	TTS audio generated from text.
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.3533 max=0.4662 rms=0.0373 dtype=float32
+DEBUG	Resampled TTS audio from 44100Hz to 16000Hz.
+INFO	[LATENCY] Resampling took 0.081s
+cuda_is_available: True
+Index search FAILED or disabled
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.3533 max=0.4662 rms=0.0401 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.07', '0.09']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.22', '0.26']  thresh=0.52
+DEBUG	>>>>COMPLETE NOW: (None, None, '')
+DEBUG	INCOMPLETE: (40.6, 41.519999999999996, ' and come up the...')
+DEBUG	--- not enough segments to chunk
+DEBUG	chunking segment
+DEBUG	len of buffer now: 17.92
+INFO	[LATENCY] STT processing took 1.756s
+DEBUG	PROMPT:  content with this small group in the villa some kind of loose star on the edge of their system. This is like a holiday for him after the W war. mud and rivers and bridges.
+DEBUG	CONTEXT:  bridges. He enters the hug house only when invited in, just a tentative visitor. The way he had done that first night when he had followed the faltering sound of Hana's piano.
+DEBUG	transcribing 18.92 seconds from 23.62
+Spent time: fea = 0.126s, index = 0.000s, f0 = 0.030s, model = 0.221s
+sola_offset = 110
+Infer time: 0.39
+DEBUG	[RVC] TTS audio processed through RVC.
+INFO	[LATENCY] RVC processing took 0.394s
+DEBUG	Sending audio to TTS client...
+DEBUG	Audio sent to TTS client.
+[AUD_DESTUT DEBUG] window @ 0.00s  min=-0.3533 max=0.4662 rms=0.0400 dtype=float32
+
+Single inference success.
+[AUD_DESTUT DEBUG] window @ 0.50s  min=-0.3533 max=0.4662 rms=0.0400 dtype=float32
+
+Single inference success.
+[AUD_DESTUT] /p probs: ['0.07', '0.15']  thresh=0.63
+[AUD_DESTUT] /b probs: ['0.17', '0.16']  thresh=0.52
+DEBUG	>>>>COMPLETE NOW: (40.2, 41.120000000000005, ' and come up')
+DEBUG	INCOMPLETE: (41.120000000000005, 42.22, ' the ssssss.')
+DEBUG	--- not enough segments to chunk
+DEBUG	chunking segment
+DEBUG	len of buffer now: 18.92
+INFO	[LATENCY] STT processing took 3.937s
+r_destutter for t from 40.2 to 41.120000000000005 success
+wr_destutter for t from 40.2 to 41.120000000000005 success
+INFO	[LATENCY] STT get_destutter_info took 0.001s
+40200 41120  and come up
+DEBUG	PROMPT:  content with this small group in the villa some kind of loose star on the edge of their system. This is like a holiday for him after the W war. mud and rivers and bridges.
+DEBUG	CONTEXT:  bridges. He enters the hug house only when invited in, just a tentative visitor. The way he had done that first night when he had followed the faltering sound of Hana's piano. and come up
+DEBUG	transcribing 19.92 seconds from 23.62
+DEBUG	>>>>COMPLETE NOW: (41.120000000000005, 41.38, ' the')
+DEBUG	INCOMPLETE: (41.38, 43.36, ' cypress.')
+DEBUG	--- not enough segments to chunk
+DEBUG	chunking segment
+DEBUG	len of buffer now: 19.92
+INFO	[LATENCY] STT processing took 0.638s
+r_destutter for t from 41.120000000000005 to 41.38 success
+wr_destutter for t from 41.120000000000005 to 41.38 success
+INFO	[LATENCY] STT get_destutter_info took 0.001s
+41120 41380  the
+INFO	TTS grouped chunk queued: 'and come up the-'
+INFO	[LATENCY] Total time in buffer & TTS queue: 0.641s
+DEBUG	o received from TTS queue.
+DEBUG	GENERATING TTS audio...
+ > Text split to sentences.DEBUG	PROMPT:  content with this small group in the villa some kind of loose star on the edge of their system. This is like a holiday for him after the W war. mud and rivers and bridges.
+
+and come up the-DEBUG	CONTEXT:  bridges. He enters the hug house only when invited in, just a tentative visitor. The way he had done that first night when he had followed the faltering sound of Hana's piano. and come up the
+
+DEBUG	transcribing 20.92 seconds from 23.62
+ > ===========================
+  0%| | 0/1 [00:00<?, ?it/100%|#| 1/1 [00:00<00:00, 100%|#| 1/1 [00:00<00:00, 
+INFO	[LATENCY] TTS synthesis took 0.859s
+DEBUG	TTS audio generated from text.
+DEBUG	Resampled TTS audio from 44100Hz to 16000Hz.
+INFO	[LATENCY] Resampling took 0.068s
+cuda_is_available: True
+Index search FAILED or disabled
+DEBUG	>>>>COMPLETE NOW: (None, None, '')
+DEBUG	INCOMPLETE: (41.400000000000006, 44.28, ' cypress-lined pifi.')
+DEBUG	--- not enough segments to chunk
+DEBUG	chunking segment
+DEBUG	len of buffer now: 20.92
+INFO	[LATENCY] STT processing took 1.001s
+DEBUG	PROMPT:  content with this small group in the villa some kind of loose star on the edge of their system. This is like a holiday for him after the W war. mud and rivers and bridges.
+DEBUG	CONTEXT:  bridges. He enters the hug house only when invited in, just a tentative visitor. The way he had done that first night when he had followed the faltering sound of Hana's piano. and come up the
+DEBUG	transcribing 21.92 seconds from 23.62
+Spent time: fea = 0.057s, index = 0.000s, f0 = 0.017s, model = 0.128s
+sola_offset = 160
+Infer time: 0.48
+Index search FAILED or disabled
+Spent time: fea = 0.070s, index = 0.001s, f0 = 0.026s, model = 0.164s
+sola_offset = 148
+Infer time: 0.27
+DEBUG	[RVC] TTS audio processed through RVC.
+INFO	[LATENCY] RVC processing took 0.758s
+DEBUG	Sending audio to TTS client...
+DEBUG	Audio sent to TTS client.
+DEBUG	>>>>COMPLETE NOW: (41.400000000000006, 43.82, ' cypress-lined')
+DEBUG	INCOMPLETE: (43.82, 44.2, ' path.')
+DEBUG	--- not enough segments to chunk
+DEBUG	chunking segment
+DEBUG	len of buffer now: 21.92
+INFO	[LATENCY] STT processing took 1.032s
+r_destutter for t from 41.400000000000006 to 43.82 success
+wr_destutter for t from 41.400000000000006 to 43.82 success
+INFO	[LATENCY] STT get_destutter_info took 0.001s
+41400 43820  cypress-lined
+DEBUG	PROMPT:  content with this small group in the villa some kind of loose star on the edge of their system. This is like a holiday for him after the W war. mud and rivers and bridges.
+DEBUG	CONTEXT:  bridges. He enters the hug house only when invited in, just a tentative visitor. The way he had done that first night when he had followed the faltering sound of Hana's piano. and come up the cypress-lined
+DEBUG	transcribing 22.92 seconds from 23.62
+DEBUG	>>>>COMPLETE NOW: (None, None, '')
+DEBUG	INCOMPLETE: (43.84, 46.18, ' path and stay.')
+DEBUG	--- not enough segments to chunk
+DEBUG	chunking segment
+DEBUG	len of buffer now: 22.92
+INFO	[LATENCY] STT processing took 0.921s
+DEBUG	PROMPT:  content with this small group in the villa some kind of loose star on the edge of their system. This is like a holiday for him after the W war. mud and rivers and bridges.
+DEBUG	CONTEXT:  bridges. He enters the hug house only when invited in, just a tentative visitor. The way he had done that first night when he had followed the faltering sound of Hana's piano. and come up the cypress-lined
+DEBUG	transcribing 23.92 seconds from 23.62
+DEBUG	>>>>COMPLETE NOW: (43.84, 45.760000000000005, ' path and')
+DEBUG	INCOMPLETE: (45.760000000000005, 47.519999999999996, ' sti, stepped into...')
+DEBUG	--- not enough segments to chunk
+DEBUG	chunking segment
+DEBUG	len of buffer now: 23.92
+INFO	[LATENCY] STT processing took 0.947s
+r_destutter for t from 43.84 to 45.760000000000005 success
+wr_destutter for t from 43.84 to 45.760000000000005 success
+INFO	[LATENCY] STT get_destutter_info took 0.002s
+43840 45760  path and
+INFO	TTS grouped chunk queued: 'cypress-lined path and-'
+INFO	[LATENCY] Total time in buffer & TTS queue: 1.878s
+DEBUG	o received from TTS queue.
+DEBUG	PROMPT:  content with this small group in the villa some kind of loose star on the edge of their system. This is like a holiday for him after the W war. mud and rivers and bridges.
+DEBUG	GENERATING TTS audio...
+ > Text split to sentences.DEBUG	CONTEXT:  bridges. He enters the hug house only when invited in, just a tentative visitor. The way he had done that first night when he had followed the faltering sound of Hana's piano. and come up the cypress-lined path and
+
+DEBUG	transcribing 23.93 seconds from 23.62
+cypress-lined path and-
+ > ===========================
+  0%| | 0/1 [00:00<?, ?it/100%|#| 1/1 [00:01<00:00, 100%|#| 1/1 [00:01<00:00, 
+INFO	[LATENCY] TTS synthesis took 1.133s
+DEBUG	TTS audio generated from text.
+DEBUG	Resampled TTS audio from 44100Hz to 16000Hz.
+INFO	[LATENCY] Resampling took 0.081s
+cuda_is_available: True
+Index search FAILED or disabled
+DEBUG	>>>>COMPLETE NOW: (45.760000000000005, 47.519999999999996, ' sti, stepped into...')
+DEBUG	INCOMPLETE: (None, None, '')
+DEBUG	--- not enough segments to chunk
+DEBUG	chunking segment
+DEBUG	len of buffer now: 23.93
+INFO	[LATENCY] STT processing took 1.320s
+r_destutter for t from 45.760000000000005 to 47.519999999999996 success
+wr_destutter for t from 45.760000000000005 to 47.519999999999996 success
+INFO	[LATENCY] STT get_destutter_info took 0.004s
+45760 47520  sti, stepped into...
+INFO	TTS grouped chunk queued: 'sti, stepped into...'
+INFO	[LATENCY] Total time in buffer & TTS queue: 0.001s
+DEBUG	o received from TTS queue.
+DEBUG	GENERATING TTS audio...
+ > Text split to sentences.DEBUG	PROMPT:  content with this small group in the villa some kind of loose star on the edge of their system. This is like a holiday for him after the W war. mud and rivers and bridges.
+
+DEBUG	CONTEXT:  bridges. He enters the hug house only when invited in, just a tentative visitor. The way he had done that first night when he had followed the faltering sound of Hana's piano. and come up the cypress-lined path and sti, stepped into...
+sti, stepped into. . .DEBUG	transcribing 26.43 seconds from 23.62
+
+ > ===========================
+  0%| | 0/1 [00:00<?, ?it/Spent time: fea = 0.073s, index = 0.000s, f0 = 0.029s, model = 0.329s
+sola_offset = 51
+Infer time: 0.58
+DEBUG	[RVC] TTS audio processed through RVC.
+INFO	[LATENCY] RVC processing took 0.589s
+DEBUG	Sending audio to TTS client...
+DEBUG	Audio sent to TTS client.
+100%|#| 1/1 [00:01<00:00, 100%|#| 1/1 [00:01<00:00, 
+INFO	[LATENCY] TTS synthesis took 1.075s
+DEBUG	TTS audio generated from text.
+DEBUG	Resampled TTS audio from 44100Hz to 16000Hz.
+INFO	[LATENCY] Resampling took 0.089s
+cuda_is_available: True
+Index search FAILED or disabled
+DEBUG	>>>>COMPLETE NOW: (None, None, '')
+DEBUG	INCOMPLETE: (47.58, 49.22, ' the library.')
+DEBUG	--- not enough segments to chunk
+DEBUG	chunking segment
+DEBUG	len of buffer now: 26.43
+INFO	[LATENCY] STT processing took 1.276s
+DEBUG	last, noncommited: (47.58, 49.22, ' the library.')
+47580 49220  the library.
+INFO	TTS grouped chunk queued: 'the library.'
+INFO	[LATENCY] Total time in buffer & TTS queue: 0.000s
+DEBUG	o received from TTS queue.
+INFO	Connection to stt client closed
+DEBUG	GENERATING TTS audio...
+ > Text split to sentences.INFO	Waiting for TTS/RVC pipeline to finish draining...
+
+the library.
+ > ===========================
+  0%| | 0/1 [00:00<?, ?it/Spent time: fea = 0.064s, index = 0.002s, f0 = 0.022s, model = 0.164s
+sola_offset = 57
+Infer time: 0.26
+Index search FAILED or disabled
+Spent time: fea = 0.076s, index = 0.001s, f0 = 0.021s, model = 0.159s
+sola_offset = 2
+Infer time: 0.27
+DEBUG	[RVC] TTS audio processed through RVC.
+INFO	[LATENCY] RVC processing took 0.538s
+DEBUG	Sending audio to TTS client...
+DEBUG	Audio sent to TTS client.
+100%|#| 1/1 [00:00<00:00, 100%|#| 1/1 [00:00<00:00, 
+INFO	[LATENCY] TTS synthesis took 0.604s
+DEBUG	TTS audio generated from text.
+DEBUG	Resampled TTS audio from 44100Hz to 16000Hz.
+INFO	[LATENCY] Resampling took 0.054s
+cuda_is_available: TrueINFO	TTS queue drained.
+
+Index search FAILED or disabledINFO	Saved post-audio-destutter audio to test_results/convlstm/aud_destut_output.wav
+
+INFO	Transcript file written.
+INFO	WER: 0.152
+Spent time: fea = 0.038s, index = 0.001s, f0 = 0.016s, model = 0.082s
+sola_offset = 20
+Infer time: 0.15
+Index search FAILED or disabled
+Spent time: fea = 0.094s, index = 0.001s, f0 = 0.013s, model = 0.071s
+sola_offset = 143
+Infer time: 0.19
+DEBUG	[RVC] TTS audio processed through RVC.
+INFO	[LATENCY] RVC processing took 0.338s
+DEBUG	Sending audio to TTS client...
+DEBUG	Audio sent to TTS client.
