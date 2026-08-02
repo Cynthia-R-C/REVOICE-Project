@@ -9,9 +9,11 @@ raw_data/
 *.mp3
 *.csv
 
-
 # # Ignore already cloned repos or models
 # Retrieval-based-Voice-Conversion-WebUI/
 # *.pt
 # *.ckpt
 # *.pth
+
+# Don't ignore test audio results!!
+!src/whisper_streaming/test_results/**/*.wav

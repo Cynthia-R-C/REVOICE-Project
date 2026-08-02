@@ -14,7 +14,15 @@ import soundfile as sf
 import numpy as np
 import queue
 import time
-from scipy import signal  # for time-stretch resampling in adaptive playback speed
+from scipy import signal  # fallback resampler if pitch-preserving one unavailable
+
+# Pitch preserving time stretch (WSOLA)
+try:
+    from audiotsm import wsola
+    from audiotsm.io.array import ArrayReader, ArrayWriter
+    _HAVE_TSM = True
+except ImportError:
+    _HAVE_TSM = False
 
 from threading import Lock
 
@@ -85,6 +93,12 @@ class PlayoutBuffer:
         self._resume_threshold = self._prebuffer_bytes
 
         self.total_trimmed_secs = 0.0  # running tot
+
+        # WSOLA can't produce usable output with too-small slices so two buffers
+        # Source _buf = pre stretched
+        # This = post stretched, purpose is so that real time output is smooth and natural instead of quickly outputting then silences
+        self._stretched = bytearray()   # ready-to-play, already-stretched output
+        self._min_stretch_src_bytes = int(0.30 * self._bytes_per_sec)  # ~4800 samples/block
 
     def push(self, data: bytes):
         '''Called by the network receiver thread with each received chunk.'''
@@ -193,7 +207,7 @@ class PlayoutBuffer:
         return SPEED_MIN + frac * (SPEED_MAX - SPEED_MIN)
 
     def pull_stretched(self, needed_bytes: int) -> bytes:
-        '''Stretch out bytes of audio based on how drained the buffer is, aka to the buffer-draining speed. (Makes sure not to stretch silence.)'''
+        '''Stretch out bytes of audio based on how drained the buffer is, aka to the buffer-draining speed. (Makes sure not to stretch silence.) Refills stretched buffer from non-stretched buffer'''
         with self._lock:
             # Buffering/underrun handling
             if self.state == self.BUFFERING:
@@ -201,57 +215,72 @@ class PlayoutBuffer:
                     return b'\x00' * needed_bytes
                 self.state = self.PLAYING
                 if self.verbose:
-                    print(f"[PLAYOUT] Buffer filled ({len(self._buf) / self._bytes_per_sec:.2f}s) "
-                          f"- starting playback.", flush=True)
+                    print(f'[PLAYOUT] Buffer filled ({len(self._buf) / self._bytes_per_sec:.2f}s) - starting playback.', flush=True)
 
-            speed = self._current_speed(len(self._buf))
             frame_bytes = BYTES_PER_SAMPLE * CHANNELS
-            out_frames = needed_bytes // frame_bytes
-            src_frames_wanted = int(round(out_frames * speed))
-            src_bytes_wanted = src_frames_wanted * frame_bytes
 
-            if len(self._buf) >= src_bytes_wanted and src_frames_wanted > 0:
-                src = bytes(self._buf[:src_bytes_wanted])
-                del self._buf[:src_bytes_wanted]
-            else:
-                # Partial underrun: take what's left, then re-arm
-                src = bytes(self._buf)
-                self._buf.clear()
-                self.state = self.BUFFERING
-                self._resume_threshold = self._rebuffer_bytes
-                if self.verbose:
-                    print(f"[PLAYOUT] Underrun - pausing playback until "
-                          f"{self._rebuffer_bytes / self._bytes_per_sec:.2f}s is buffered again.",
-                          flush=True)
-                # stretch whatever we got up to the output size, pad remainder
-                if len(src) >= frame_bytes:
-                    stretched = self._resample_to_frames(src, out_frames)
-                    return stretched + b'\x00' * (needed_bytes - len(stretched))
-                return src + b'\x00' * (needed_bytes - len(src))
+            # Refill the stretched buffer
+            while len(self._stretched) < needed_bytes:
+                if len(self._buf) < frame_bytes:
+                    break  # no source left to stretch
 
-        # Resample outside the lock (CPU work; buffer already updated)
-        if abs(speed - 1.0) < 1e-3:
-            return src  # no stretch needed
-        return self._resample_to_frames(src, out_frames)
+                speed = self._current_speed(len(self._buf))
+                # Take from source
+                src_take = min(len(self._buf),
+                               max(self._min_stretch_src_bytes,
+                                   int(needed_bytes * speed) // frame_bytes * frame_bytes))
+                src = bytes(self._buf[:src_take])
+                del self._buf[:src_take]
 
-    @staticmethod
-    def _resample_to_frames(src_bytes, out_frames):
+                in_frames = len(src) // frame_bytes
+                out_frames = max(1, int(round(in_frames / speed)))  # speed < 1 --> more out
+                stretched = self._resample_to_frames(src, out_frames)
+                self._stretched += stretched
+
+            if len(self._stretched) >= needed_bytes:
+                data = bytes(self._stretched[:needed_bytes])
+                del self._stretched[:needed_bytes]
+                return data
+
+            # if not enough even after trying to refill, pad what we have and re-arm with the rebuffer threshold
+            data = bytes(self._stretched)
+            self._stretched.clear()
+            self.state = self.BUFFERING
+            self._resume_threshold = self._rebuffer_bytes
+            if self.verbose:
+                print(f'[PLAYOUT] Underrun - pausing playback until {self._rebuffer_bytes / self._bytes_per_sec:.2f}s is buffered again.', flush=True)
+            return data + b'\x00' * (needed_bytes - len(data))
+
+    _tsm_warned = False
+
+    def _resample_to_frames(cls, src_bytes, out_frames):
         '''Resample src_bytes (int16 mono) to exactly out_frames samples via
-        polyphase filtering (scipy.signal.resample_poly - high quality, no pitch
-        artifacts beyond the intended time-stretch).'''
+        polyphase filtering (scipy.signal.resample_poly)'''
         arr = np.frombuffer(src_bytes, dtype=DTYPE)
         in_frames = len(arr)
+        out_bytes_len = out_frames * BYTES_PER_SAMPLE * CHANNELS
         if in_frames == 0 or out_frames == 0:
-            return b'\x00' * (out_frames * BYTES_PER_SAMPLE * CHANNELS)
+            return b'\x00' * out_bytes_len
         if in_frames == out_frames:
             return src_bytes
-        # resample_poly needs integer up/down; derive from the frame ratio
-        g = np.gcd(in_frames, out_frames)
-        up = out_frames // g
-        down = in_frames // g
-        stretched = signal.resample_poly(arr.astype(np.float32), up, down)
+
+        if _HAVE_TSM:
+            # speed = in/out: <1 stretches (more output than input) --> slower playback
+            speed = in_frames / out_frames
+            reader = ArrayReader(arr.astype(np.float32).reshape(1, -1))
+            writer = ArrayWriter(channels=1)
+            tsm = wsola(channels=1, speed=speed)
+            tsm.run(reader, writer)
+            stretched = writer.data.flatten()
+        else:
+            if not cls._tsm_warned:
+                print('[PLAYOUT] WARNING: audiotsm not installed, falling back to pitch-LOWERING resampling for slowdown', flush=True)
+                cls._tsm_warned = True
+            g = np.gcd(in_frames, out_frames)
+            stretched = signal.resample_poly(arr.astype(np.float32), out_frames // g, in_frames // g)
+
         stretched = np.clip(np.round(stretched), -32768, 32767).astype(DTYPE)
-        # length can be off by 1-2 samples from rounding; pad/trim to exact
+        # Adjust to out_frames len in case few frames off
         if len(stretched) < out_frames:
             stretched = np.concatenate([stretched, np.zeros(out_frames - len(stretched), dtype=DTYPE)])
         else:
