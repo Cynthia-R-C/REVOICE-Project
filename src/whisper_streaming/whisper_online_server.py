@@ -14,6 +14,8 @@ import argparse
 import os
 import logging
 import numpy as np
+import math
+from scipy import signal  # for the resample-stretch before RVC
 
 # ======= Calculating WER and latency ======= #
 import time
@@ -132,6 +134,14 @@ MELO_LANGUAGE = 'EN'
 MELO_SPEAKER = 'EN-Default'
 MELO_SPEED = 0.8
 
+# ===== Adaptive Slowdown ===== #
+PITCH_STRETCH_ENABLED = True
+STRETCH_MIN = 1.0    # healthy buffer estimate -> no stretch
+STRETCH_MAX = 1.18   # low buffer estimate -> stretch this much to buy time
+STRETCH_LOW_WATER_SECS = 1.5
+STRETCH_HIGH_WATER_SECS = 4.0
+CLIENT_PREBUFFER_SECS = 3.5  # MUST match PREBUFFER_SECS in coqui_realtime_client.py - we can't see the client's actual buffer so we estimate it off our own send timestamps + this constant
+
 TTS_GROUPING_ENABLED = True
 ARTIFIC_INTON = True   # whether or not to normalize text groups with punctuation before TTS conversion
 TTS_MAX_WAIT_SEC = 0.3   # max seconds to stay in buffer; adds dash with this pause time
@@ -143,7 +153,7 @@ TTS_END_PUNCT = '.?!,:;'
 # Main function within if __name__ == '__main__' to prevent infinite process spawning on Windows
 def main():
     # Use global keywords so the rest of script can see these objects
-    global args, asr, online, base_online, rvc_converter, min_chunk, size, language
+    global args, asr, online, base_online, rvc_converter, min_chunk, size, language, BASE_PITCH
     global tts, TTS_SR, destutterer_stt, melo_speaker_ids
     
  
@@ -212,6 +222,7 @@ def main():
     # ======= Set Up RVC ======= #
     from rvc_conversion import RVC
     rvc_converter = RVC() # initialize once; latency-optimized 
+    BASE_PITCH = rvc_converter.gui.gui_config.pitch  # whatever pitch shift is already configured (currently -9), stretch compensation stacks on top of this
 
 
 
@@ -794,6 +805,44 @@ def synthesize_text(text):
         raise ValueError('No TTS backend selected.')
 
 
+def stretch_audio_for_rvc(wav, stretch):
+    '''Resamples wav to change its duration by stretch (>1 = slower)'''
+    if abs(stretch - 1.0) < 0.02:
+        return wav  # basically no stretch, don't bother
+    in_frames = len(wav)
+    out_frames = max(1, int(round(in_frames * stretch)))
+    g = np.gcd(in_frames, out_frames)
+    stretched = signal.resample_poly(wav.astype(np.float32), out_frames // g, in_frames // g)
+    return stretched.astype(np.float32)
+
+
+def get_pitch_correction(stretch):
+    '''How many semitones to shift up to undo the pitch drop from stretch_audio_for_rvc.
+    Derivation: stretching duration drops pitch to a ratio of 1/stretch, so correction = 12*log2(stretch) semitones'''
+    if abs(stretch - 1.0) < 0.02:
+        return 0.0
+    return 12 * math.log2(stretch)
+
+
+def estimate_client_buffer_secs(buffer_state):
+    '''Guesses how much audio is sitting in the client's playout buffer right now'''
+    if buffer_state['stream_start_perf'] is None:
+        return 0.0  # haven't sent anything yet this session
+    elapsed = time.perf_counter() - buffer_state['stream_start_perf']
+    played_est = max(0.0, elapsed - CLIENT_PREBUFFER_SECS)
+    return max(0.0, buffer_state['total_sent_secs'] - played_est)
+
+
+def stretch_factor_for_depth(depth_secs):
+    '''Calculates what stretch factor is needed based on the estimated buffer depth'''
+    if depth_secs <= STRETCH_LOW_WATER_SECS:
+        return STRETCH_MAX
+    if depth_secs >= STRETCH_HIGH_WATER_SECS:
+        return STRETCH_MIN
+    frac = (depth_secs - STRETCH_LOW_WATER_SECS) / (STRETCH_HIGH_WATER_SECS - STRETCH_LOW_WATER_SECS)
+    return STRETCH_MAX + frac * (STRETCH_MIN - STRETCH_MAX)
+
+
 class Server:
     Clients = [] # list of client threads
 
@@ -842,7 +891,7 @@ class Server:
             if RVC_FLAG:
                 # Pass a dummy rec with chunk_id warmup so finalize_and_send knows to ignore it
                 dummy_rec = LatencyRecord(chunk_id='warmup', group_start_perf=time.perf_counter())
-                rvc_queue_obj.put((wav, dummy_rec))
+                rvc_queue_obj.put((wav, dummy_rec, BASE_PITCH))  # no stretch for warmup, just base pitch
                 
         except Exception as e:
             logger.error(f"Warmup failed: {e}")
@@ -856,7 +905,11 @@ class Server:
         conn = client['conn/socket']
 
         print("TTS client connected.")
-        
+
+        # tracks how much audio we've sent + when we started, used to estimate
+        # the client's buffer depth for adaptive stretching (see estimate_client_buffer_secs)
+        buffer_state = {'total_sent_secs': 0.0, 'stream_start_perf': None}
+
         # Helper for cleanup and sending code
         def finalize_and_send(wav, rec):
             '''Helper for cleanup and sending code + records overall latency'''
@@ -868,6 +921,11 @@ class Server:
 
             # Convert to 16-bit PCM
             wav_pcm = (wav * 32767).astype(np.int16)
+
+            # update buffer_state so we can keep estimating client buffer depth
+            if buffer_state['stream_start_perf'] is None:
+                buffer_state['stream_start_perf'] = time.perf_counter()
+            buffer_state['total_sent_secs'] += len(wav_pcm) / SAMPLING_RATE
 
             # Stamp the moment audio is sent and hand record to tracker
             rec.audio_sent = time.perf_counter()
@@ -892,12 +950,13 @@ class Server:
                     if item is None: 
                         break
                     
-                    wav, rec = item
+                    wav, rec, f0_key = item
 
                     # Stamp RVC queue exit and start of RVC processing
                     rec.rvc_queue_exit = time.perf_counter()
                     tr0 = time.perf_counter()
-                    
+
+                    rvc_converter.set_pitch_key(f0_key)  # set right before vc() so that this item definitely uses it
                     new_aud = rvc_converter.vc(wav)  # outputs 2D array, need to squeeze to 1D
                             
                     if new_aud.shape[0] == 0:
@@ -991,9 +1050,19 @@ class Server:
                         # Only use RVC if audio is long enough to be meaningful
                         min_samples = 2000  # ~0.125s at 16kHz
                         if wav.shape[0] >= min_samples:
+
+                            # adaptive stretch
+                            f0_key = BASE_PITCH
+                            if PITCH_STRETCH_ENABLED:
+                                depth_est = estimate_client_buffer_secs(buffer_state)
+                                stretch = stretch_factor_for_depth(depth_est)
+                                wav = stretch_audio_for_rvc(wav, stretch)
+                                f0_key = BASE_PITCH + get_pitch_correction(stretch)
+                                logger.info(f'[STRETCH] est buffer {depth_est:.2f}s -> stretch {stretch:.3f}x -> f0_up_key {f0_key:.2f}')
+
                             # Stamp RVC queue enter and put in RVC queue
                             rec.rvc_queue_enter = time.perf_counter()
-                            self.rvc_queue.put((wav, rec))
+                            self.rvc_queue.put((wav, rec, f0_key))
                         else:
                             logger.debug(f"[RVC] Skipping RVC for short audio ({wav.shape[0]} samples)")
 
@@ -1043,9 +1112,7 @@ class Server:
         Server.Clients.remove(client)  # remove client from client list
         logger.info('Connection to stt client closed')
 
-        # Wait for TTS queue (and by extension the RVC queue) to fully drain before
-        # reporting stats. Without this, in-flight TTS/RVC chunks haven't been added
-        # to the tracker yet and the stats file ends up empty.
+        # Wait for TTS queue (and by extension the RVC queue) to fully drain before reporting stats
         logger.info('Waiting for TTS/RVC pipeline to finish draining...')
         tts_queue.join()
         logger.info('TTS queue drained.')

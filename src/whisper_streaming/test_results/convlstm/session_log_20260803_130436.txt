@@ -1,0 +1,31 @@
+[SESSION LOG] Saving full terminal output to: C:\Users\crc24\Documents\VS_Code_Python_Folder\ScienceFair2025\src\whisper_streaming\test_results\convlstm\session_log_20260803_130436.txt
+INFO	Loading Whisper large-v3-turbo model for en...
+INFO	done. It took 2.82 seconds.
+C:\Users\crc24\miniconda3\envs\melo_env\lib\site-packages\torch\nn\utils\weight_norm.py:143: FutureWarning: `torch.nn.utils.weight_norm` is deprecated in favor of `torch.nn.utils.parametrizations.weight_norm`.
+  WeightNorm.apply(module, name, dim)
+C:\Users\crc24\miniconda3\envs\melo_env\lib\site-packages\torch\nn\utils\weight_norm.py:143: FutureWarning: `torch.nn.utils.weight_norm` is deprecated in favor of `torch.nn.utils.parametrizations.weight_norm`.
+  WeightNorm.apply(module, name, dim)
+WARNING	Whisper is not warmed up. The first chunk processing may take longer.
+INFO	Listening on('localhost', 9000)
+INFO	Connected to client on ('127.0.0.1', 60179)
+INFO	tts client has connected.
+TTS client connected.
+INFO	Warming up TTS and RVC models...
+ > Text split to sentences.
+Warmup
+ > ===========================
+  0%|          | 0/1 [00:00<?, ?it/s]C:\Users\crc24\miniconda3\envs\melo_env\lib\site-packages\huggingface_hub\file_download.py:945: FutureWarning: `resume_download` is deprecated and will be removed in version 1.0.0. Downloads always resume when possible. If you want to force a new download, use `force_download=True`.
+  warnings.warn(
+100%|##| 1/1 [00:03<00:00,  3.01s/it]100%|##| 1/1 [00:03<00:00,  3.01s/it]
+cuda_is_available: True
+Index search FAILED or disabled
+Spent time: fea = 0.196s, index = 0.000s, f0 = 0.011s, model = 0.663s
+sola_offset = 0
+Infer time: 0.95
+Index search FAILED or disabled
+Spent time: fea = 0.015s, index = 0.000s, f0 = 0.027s, model = 0.028s
+sola_offset = 34
+Infer time: 0.10
+DEBUG	[RVC] TTS audio processed through RVC.
+INFO	[LATENCY] RVC processing took 1.043s
+INFO	Warmup chunk processed successfully.

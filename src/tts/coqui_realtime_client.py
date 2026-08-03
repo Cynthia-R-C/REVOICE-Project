@@ -1,6 +1,6 @@
-# Real-time TTS client with proper playout (jitter) buffer, replacing prev oneshot prebuffer design
+# real-time TTS client with a playout (jitter) buffer
 
-# class PlayoutBuffer adds:
+# class PlayoutBuffer does:
 # 1. Hysteresis: playback doesn't resume until a rebuffer threshold is met, so output returns in coherent groups instead of spikes
 # 2. Catchup: when buffered backlog exceeds MAX_BACKLOG_SEC, low-energy blocks (silences) are dropped from the buffer until it shrinks to TARGET_BACKLOG_SEC - reclaims latency
 # 3. Partial-underrun handling: if buffer holds < one callback's worth, what exists is played (padded with silence) + buffer rearms instead of leaving fragments
@@ -14,15 +14,6 @@ import soundfile as sf
 import numpy as np
 import queue
 import time
-from scipy import signal  # fallback resampler if pitch-preserving one unavailable
-
-# Pitch preserving time stretch (WSOLA)
-try:
-    from audiotsm import wsola
-    from audiotsm.io.array import ArrayReader, ArrayWriter
-    _HAVE_TSM = True
-except ImportError:
-    _HAVE_TSM = False
 
 from threading import Lock
 
@@ -35,9 +26,7 @@ DTYPE = np.int16
 BYTES_PER_SAMPLE = np.dtype(DTYPE).itemsize  # 2 for int16
 
 # Playout buffer tuning
-# Deep prebuffer, stores fluent audio during easy stretches so it can output it when stutter gap from rate mismatches appear
-# startup latency ^ but smoothness also ^
-PREBUFFER_SECS = 3.5    # initial fill (deep)
+PREBUFFER_SECS = 3.5    # initial fill (deep). MUST match CLIENT_PREBUFFER_SECS in whisper_online_server.py (server estimates buffer depth off this number)
 REBUFFER_SECS = 2.0    # for deep refill after underrun
 MAX_BACKLOG_SECS = 8.0   # reserve limit for fluent stretches
 TARGET_BACKLOG_SECS = 6.0   # trim only when backlog is really really excessive
@@ -45,12 +34,6 @@ TRIM_BLOCK_MS = 20
 TRIM_RMS_THRESHOLD = 120
 MIN_TRIM_RUN_MS = 200
 GUARD_BLOCKS = 2
-
-# Adaptive playback speed, slows down when buffer is low
-SPEED_MIN = 0.72  # slowest playback (buffer low)
-SPEED_MAX = 0.92  # fastest playback (buffer norm)
-SPEED_LOW_WATER_SECS = 1.5  # thresh below which to play at min speed
-SPEED_HIGH_WATER_SECS = 5.0  # thresh above which to play at max speed
 
 # Saving a final audio file
 GROUP = 'convlstm'
@@ -60,7 +43,7 @@ REALTIME_OUTPUT_PATH = f'C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\Sci
 
 class PlayoutBuffer:
     '''Playout buffer.
-    
+
     1. Hysteresis: playback doesn't resume until a rebuffer threshold is met, so output returns in coherent groups instead of spikes
     2. Catchup: when buffered backlog exceeds MAX_BACKLOG_SEC, low-energy blocks (silences) are dropped from the buffer until it shrinks to TARGET_BACKLOG_SEC - reclaims latency
     3. Partial-underrun handling: if buffer holds < one callback's worth, what exists is played (padded with silence) + buffer rearms instead of leaving fragments'''
@@ -89,16 +72,10 @@ class PlayoutBuffer:
                                      // frame_bytes * frame_bytes)  # frame-aligned
         self._trim_rms_threshold = trim_rms_threshold
 
-        # First start uses the(larger prebuf thresh, later uses smaller rebuff thresh
+        # First start uses the (larger) prebuf thresh, later uses (smaller) rebuff thresh
         self._resume_threshold = self._prebuffer_bytes
 
         self.total_trimmed_secs = 0.0  # running tot
-
-        # WSOLA can't produce usable output with too-small slices so two buffers
-        # Source _buf = pre stretched
-        # This = post stretched, purpose is so that real time output is smooth and natural instead of quickly outputting then silences
-        self._stretched = bytearray()   # ready-to-play, already-stretched output
-        self._min_stretch_src_bytes = int(0.30 * self._bytes_per_sec)  # ~4800 samples/block
 
     def push(self, data: bytes):
         '''Called by the network receiver thread with each received chunk.'''
@@ -155,25 +132,20 @@ class PlayoutBuffer:
             trimmed_secs = dropped / self._bytes_per_sec
             self.total_trimmed_secs += trimmed_secs
             if self.verbose:
-                print(f"[PLAYOUT] Catch-up: trimmed {trimmed_secs:.2f}s of sustained silence "
-                      f"(total reclaimed this session: {self.total_trimmed_secs:.2f}s)",
-                      flush=True)
+                print(f'[PLAYOUT] Catch-up: trimmed {trimmed_secs:.2f}s of sustained silence (total reclaimed this session: {self.total_trimmed_secs:.2f}s)', flush=True)
         elif self.verbose:
-            # If exceeds target but can't find anything valid to trim
-            print(f"[PLAYOUT] Catch-up wanted to reclaim {needed_drop / self._bytes_per_sec:.2f}s "
-                  f"but found no sustained silence to trim - keeping all content.",
-                  flush=True)
+            # exceeded target but nothing safe to trim
+            print(f'[PLAYOUT] Catch-up wanted to reclaim {needed_drop / self._bytes_per_sec:.2f}s but found no sustained silence to trim, keeping all content.', flush=True)
 
     def pull(self, needed_bytes: int) -> bytes:
-        '''Called by the aud output callback. Returns exactly needed_bytes (pad if necessary)'''
+        '''Called by the audio output callback. Plain 1.0x read, returns exactly needed_bytes (pad if necessary)'''
         with self._lock:
             if self.state == self.BUFFERING:
                 if len(self._buf) < self._resume_threshold:
                     return b'\x00' * needed_bytes
                 self.state = self.PLAYING
                 if self.verbose:
-                    print(f"[PLAYOUT] Buffer filled ({len(self._buf) / self._bytes_per_sec:.2f}s) "
-                          f"- starting playback.", flush=True)
+                    print(f'[PLAYOUT] Buffer filled ({len(self._buf) / self._bytes_per_sec:.2f}s) - starting playback.', flush=True)
 
             if len(self._buf) >= needed_bytes:
                 data = bytes(self._buf[:needed_bytes])
@@ -186,106 +158,13 @@ class PlayoutBuffer:
             self.state = self.BUFFERING
             self._resume_threshold = self._rebuffer_bytes
             if self.verbose:
-                print(f"[PLAYOUT] Underrun - pausing playback until "
-                      f"{self._rebuffer_bytes / self._bytes_per_sec:.2f}s is buffered again.",
-                      flush=True)
+                print(f'[PLAYOUT] Underrun - pausing playback until {self._rebuffer_bytes / self._bytes_per_sec:.2f}s is buffered again.', flush=True)
             return data + b'\x00' * (needed_bytes - len(data))
 
     def buffered_secs(self) -> float:
         with self._lock:
             return len(self._buf) / self._bytes_per_sec
 
-    def _current_speed(self, buffered_bytes):
-        '''Calc playback speed given the current buffer depth'''
-        low = SPEED_LOW_WATER_SECS * self._bytes_per_sec
-        high = SPEED_HIGH_WATER_SECS * self._bytes_per_sec
-        if buffered_bytes <= low:
-            return SPEED_MIN
-        if buffered_bytes >= high:
-            return SPEED_MAX
-        frac = (buffered_bytes - low) / (high - low)
-        return SPEED_MIN + frac * (SPEED_MAX - SPEED_MIN)
-
-    def pull_stretched(self, needed_bytes: int) -> bytes:
-        '''Stretch out bytes of audio based on how drained the buffer is, aka to the buffer-draining speed. (Makes sure not to stretch silence.) Refills stretched buffer from non-stretched buffer'''
-        with self._lock:
-            # Buffering/underrun handling
-            if self.state == self.BUFFERING:
-                if len(self._buf) < self._resume_threshold:
-                    return b'\x00' * needed_bytes
-                self.state = self.PLAYING
-                if self.verbose:
-                    print(f'[PLAYOUT] Buffer filled ({len(self._buf) / self._bytes_per_sec:.2f}s) - starting playback.', flush=True)
-
-            frame_bytes = BYTES_PER_SAMPLE * CHANNELS
-
-            # Refill the stretched buffer
-            while len(self._stretched) < needed_bytes:
-                if len(self._buf) < frame_bytes:
-                    break  # no source left to stretch
-
-                speed = self._current_speed(len(self._buf))
-                # Take from source
-                src_take = min(len(self._buf),
-                               max(self._min_stretch_src_bytes,
-                                   int(needed_bytes * speed) // frame_bytes * frame_bytes))
-                src = bytes(self._buf[:src_take])
-                del self._buf[:src_take]
-
-                in_frames = len(src) // frame_bytes
-                out_frames = max(1, int(round(in_frames / speed)))  # speed < 1 --> more out
-                stretched = self._resample_to_frames(src, out_frames)
-                self._stretched += stretched
-
-            if len(self._stretched) >= needed_bytes:
-                data = bytes(self._stretched[:needed_bytes])
-                del self._stretched[:needed_bytes]
-                return data
-
-            # if not enough even after trying to refill, pad what we have and re-arm with the rebuffer threshold
-            data = bytes(self._stretched)
-            self._stretched.clear()
-            self.state = self.BUFFERING
-            self._resume_threshold = self._rebuffer_bytes
-            if self.verbose:
-                print(f'[PLAYOUT] Underrun - pausing playback until {self._rebuffer_bytes / self._bytes_per_sec:.2f}s is buffered again.', flush=True)
-            return data + b'\x00' * (needed_bytes - len(data))
-
-    _tsm_warned = False
-
-    def _resample_to_frames(cls, src_bytes, out_frames):
-        '''Resample src_bytes (int16 mono) to exactly out_frames samples via
-        polyphase filtering (scipy.signal.resample_poly)'''
-        arr = np.frombuffer(src_bytes, dtype=DTYPE)
-        in_frames = len(arr)
-        out_bytes_len = out_frames * BYTES_PER_SAMPLE * CHANNELS
-        if in_frames == 0 or out_frames == 0:
-            return b'\x00' * out_bytes_len
-        if in_frames == out_frames:
-            return src_bytes
-
-        if _HAVE_TSM:
-            # speed = in/out: <1 stretches (more output than input) --> slower playback
-            speed = in_frames / out_frames
-            reader = ArrayReader(arr.astype(np.float32).reshape(1, -1))
-            writer = ArrayWriter(channels=1)
-            tsm = wsola(channels=1, speed=speed)
-            tsm.run(reader, writer)
-            stretched = writer.data.flatten()
-        else:
-            if not cls._tsm_warned:
-                print('[PLAYOUT] WARNING: audiotsm not installed, falling back to pitch-LOWERING resampling for slowdown', flush=True)
-                cls._tsm_warned = True
-            g = np.gcd(in_frames, out_frames)
-            stretched = signal.resample_poly(arr.astype(np.float32), out_frames // g, in_frames // g)
-
-        stretched = np.clip(np.round(stretched), -32768, 32767).astype(DTYPE)
-        # Adjust to out_frames len in case few frames off
-        if len(stretched) < out_frames:
-            stretched = np.concatenate([stretched, np.zeros(out_frames - len(stretched), dtype=DTYPE)])
-        else:
-            stretched = stretched[:out_frames]
-        return stretched.tobytes()
 
 # Final audio bytelist (full + untrimmed, no timing info)
 accumulated_bytes = []
@@ -306,7 +185,7 @@ def receive_from_server(sock):
             if not data:
                 break
             playout.push(data)
-            print(f"Received {len(data)} bytes of audio data", flush=True)
+            print(f'Received {len(data)} bytes of audio data', flush=True)
 
             # Accumulate the raw bytes (untrimmed)
             with accum_lock:
@@ -315,22 +194,14 @@ def receive_from_server(sock):
         except OSError:
             break
         except Exception as e:
-            print(f"Error receiving data: {e}")
+            print(f'Error receiving data: {e}')
             break
 
 
 def audio_callback(outdata, frames, time_, status):
-    '''Callback for outputting the received audio. Thin by design - all buffering
-    and adaptive-speed policy lives in PlayoutBuffer.'''
+    '''Callback for outputting the received audio. Thin by design - all buffering policy lives in PlayoutBuffer, no stretching happens here at all anymore'''
     needed_bytes = frames * BYTES_PER_SAMPLE * CHANNELS
-    data = playout.pull_stretched(needed_bytes)
-    # pull_stretched guarantees exactly needed_bytes, but guard defensively in case
-    # a resampling rounding edge ever returns off-by-a-frame
-    if len(data) != needed_bytes:
-        if len(data) < needed_bytes:
-            data = data + b'\x00' * (needed_bytes - len(data))
-        else:
-            data = data[:needed_bytes]
+    data = playout.pull(needed_bytes)
     outdata[:] = np.frombuffer(data, dtype=DTYPE).reshape(-1, CHANNELS)
 
     # Record exactly what got sent to the speaker this callback - silence padding
@@ -352,7 +223,7 @@ if __name__ == '__main__':
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         sock.connect((HOST, PORT))
-        print(f"Connected to server at {HOST}:{PORT}. Listening for audio...")
+        print(f'Connected to server at {HOST}:{PORT}. Listening for audio...')
         sock.send('tts'.encode('utf-8'))  # initial message to server, specifies client type
 
         receiver_thread = threading.Thread(target=receive_from_server, args=(sock,))
@@ -363,7 +234,7 @@ if __name__ == '__main__':
         output_audio_stream()
 
     except Exception as e:
-        print(f"Failed to connect: {e}")
+        print(f'Failed to connect: {e}')
         sys.exit(1)
 
     finally:  # on exit
@@ -373,7 +244,7 @@ if __name__ == '__main__':
                 all_data = b''.join(accumulated_bytes)
                 with sf.SoundFile(FINAL_AUDIO_PATH, mode='w', samplerate=SAMPLING_RATE, channels=CHANNELS, subtype='PCM_16') as f:
                     f.write(np.frombuffer(all_data, dtype=DTYPE).reshape(-1, CHANNELS))
-                print("Saved final received audio to final_received_audio.wav")
+                print('Saved final received audio to final_received_audio.wav')
 
         # Save to realtime_output.wav - exactly what was heard, gaps and all
         with realtime_output_lock:
@@ -382,5 +253,5 @@ if __name__ == '__main__':
                 with sf.SoundFile(REALTIME_OUTPUT_PATH, mode='w', samplerate=SAMPLING_RATE, channels=CHANNELS, subtype='PCM_16') as f:
                     f.write(np.frombuffer(rt_data, dtype=DTYPE).reshape(-1, CHANNELS))
                 dur = len(rt_data) / (SAMPLING_RATE * CHANNELS * BYTES_PER_SAMPLE)
-                print(f"Saved real-time output audio ({dur:.1f}s, lags/pauses included) to realtime_output.wav")
+                print(f'Saved real-time output audio ({dur:.1f}s, lags/pauses included) to realtime_output.wav')
         sock.close()
