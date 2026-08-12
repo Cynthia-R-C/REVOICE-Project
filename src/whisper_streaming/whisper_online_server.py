@@ -143,11 +143,11 @@ STRETCH_HIGH_WATER_SECS = 4.0
 CLIENT_PREBUFFER_SECS = 3.5  # MUST match PREBUFFER_SECS in coqui_realtime_client.py - we can't see the client's actual buffer so we estimate it off our own send timestamps + this constant
 
 TTS_GROUPING_ENABLED = True
-ARTIFIC_INTON = True   # whether or not to normalize text groups with punctuation before TTS conversion
-TTS_MAX_WAIT_SEC = 0.3   # max seconds to stay in buffer; adds dash with this pause time
+ARTIFIC_INTON = True   # whether to add a fallback dash or period when the punctuation model does not find a real ending in time
+TTS_MAX_WAIT_SEC = 2.0   # backup cutoff for a long run the punc model hasn't found a real ending for yet
+# keep above SILENCE_TIMEOUT so real pauses win over this timer
 FLUSH_TIMER_ENABLED = False  # whether to run the background TTS flush timer loop
-SILENCE_TIMEOUT = 1.1   # Seconds of silence before forcing flush; adds period with this pause time
-TTS_END_PUNCT = '.?!,:;'
+SILENCE_TIMEOUT = 1.1   # Seconds of silence before forcing flush, uses the punctuation model on whatever is left over
 
 
 # Main function within if __name__ == '__main__' to prevent infinite process spawning on Windows
@@ -209,19 +209,24 @@ def main():
     # TTS_SR = tts.synthesizer.output_sample_rate  # TTS sampling rate
 
 
+    # ======= Set Up Punctuation Model ======= #
+    # for fixing prosody output
+    from deepmultilingualpunctuation import PunctuationModel
+    global punct_model
+    punct_model = PunctuationModel()
+
     # ======= Set Up Destutterers ======= #
     destutterer_stt = Destutterer(config_path=CONFIG_PATH,
                           ckpt_path=CKPT_PATH,
                           cmvn_path=CMVN_PATH,
                           sr=SAMPLING_RATE,
                           device=device)
-    # Note: destutterer_tts removed — audio destuttering (prolongations/blocks) now
-    # happens pre-STT in receive_audio_chunk via destutterer_stt.aud_destutter_chunk()
+    # Note: destutterer_tts removed, audio destut now happens pre-STT in receive_audio_chunk via destutterer_stt.aud_destutter_chunk()
 
 
     # ======= Set Up RVC ======= #
     from rvc_conversion import RVC
-    rvc_converter = RVC() # initialize once; latency-optimized 
+    rvc_converter = RVC()
     BASE_PITCH = rvc_converter.gui.gui_config.pitch  # whatever pitch shift is already configured (currently -9), stretch compensation stacks on top of this
 
 
@@ -307,6 +312,7 @@ class ServerProcessor:
         self.tts_group_end = None              # transcript timestamp of latest chunk in group
         self.tts_group_start_perf = None       # perf_counter corresponding to first chunk's arrival
         self.tts_buffer_ids = []               # o[0] keys of every chunk added to the current group
+        self.tts_buffer_ends = []              # o[1] end timestamp for every chunk added, lines up with tts_buffer_ids
 
         self.last_text_received_time = time.perf_counter()  # track when last text was received for auto buffer flushing after inactivity
         self.SILENCE_TIMEOUT = SILENCE_TIMEOUT  # Seconds of silence before forcing flush
@@ -514,40 +520,94 @@ class ServerProcessor:
                 self.out_file.write(o[2])
                 self.out_file.flush()  # flush immediately so partial transcripts survive crashes
 
+
     def flush_tts_group(self):
         '''Force any buffered grouped TTS text into the queue.'''
 
         # If empty
         if not self.tts_text_buffer:
             return
-
-        full_text = " ".join(self.tts_text_buffer).strip()
-
-        # If empty after stripping
-        if not full_text:
-            return
         
-        if ARTIFIC_INTON and full_text[-1] not in TTS_END_PUNCT:
-            full_text += "."    # artificial intonation PERIOD - pause
+        self._flush_group_through(len(self.tts_text_buffer) - 1, time.perf_counter(), tag='[FLUSH] Flushed final TTS grouped chunk')
 
-        # Send the rest without waiting for grouping conditions
-        grouped_o = (self.tts_group_beg, self.tts_group_end, full_text)
 
-        rec = self._make_latency_record()
+    def _punct_break_index(self, full_text):
+        '''Asks the punctuation model where a real sentence ending falls, returns the buffer fragment index it lands on or None'''
+
+        words = full_text.split()
+        try:
+            clean = punct_model.preprocess(full_text)
+            labeled = punct_model.predict(clean)
+        except Exception as e:
+            logger.warning(f'Punctuation model failed, fall back on the backup timer: {e}')
+            return None
+
+        if len(labeled) != len(words):
+            return None  # don't try to line up for now
+
+        # figure out which word index each buffered fragment ends on
+        frag_word_end = []
+        count = 0
+        for frag in self.tts_text_buffer:
+            count += len(frag.split())
+            frag_word_end.append(count - 1)
+
+        for frag_idx, word_idx in enumerate(frag_word_end):
+            if labeled[word_idx][1] in '.?':
+                return frag_idx
+        return None
+
+    def _flush_group_through(self, last_idx, now, fallback_char='.', tag='TTS grouped chunk queued'):
+        '''Flushes buffered fragments 0 through last_idx using the punctuation model, keeps anything after that buffered for next time'''
+        flush_text = " ".join(self.tts_text_buffer[:last_idx + 1]).strip()
+        if not flush_text:
+            return
+
+        flush_ids = self.tts_buffer_ids[:last_idx + 1]
+        flush_ends = self.tts_buffer_ends[:last_idx + 1]
+
+        # restore_punctuation already preprocesses the text itself, feeding it already preprocessed text was the bug that crashed the whole stt thread last run
+        try:
+            punctuated = punct_model.restore_punctuation(flush_text)
+        except Exception as e:
+            logger.warning(f'Punctuation model failed on final flush, sending the raw text instead: {e}')
+            punctuated = flush_text
+
+        if ARTIFIC_INTON and punctuated and punctuated[-1].isalnum():
+            punctuated += fallback_char  # the model left this ending on a plain word, so fall back on this instead
+
+        group_start_perf = start_times.get(flush_ids[0], now)
+        grouped_o = (flush_ids[0], flush_ends[-1], punctuated)
+        rec = self._make_latency_record(ids=flush_ids, chunk_id=flush_ids[0], group_start_perf=group_start_perf, buffer_enter=self.tts_buffer_start_time)
         self.tts_queue.put((grouped_o, rec))
-        logger.info(f'\n\n\n[FLUSH] Flushed final TTS grouped chunk: {full_text!r}\n\n\n')
+        logger.info(f'{tag}: {punctuated!r}')
 
-        # Reset all the necessary stuff
-        self.tts_text_buffer = []
-        self.tts_buffer_start_time = None
-        self.tts_group_beg = None
-        self.tts_group_end = None
-        self.tts_group_start_perf = None
-        self.tts_buffer_ids = []
+        # keep whatever is left over buffered for the next round instead of throwing it away
+        self.tts_text_buffer = self.tts_text_buffer[last_idx + 1:]
+        self.tts_buffer_ids = self.tts_buffer_ids[last_idx + 1:]
+        self.tts_buffer_ends = self.tts_buffer_ends[last_idx + 1:]
 
-    def _make_latency_record(self):
+        if self.tts_text_buffer:
+            self.tts_buffer_start_time = now
+            self.tts_group_beg = self.tts_buffer_ids[0]
+            self.tts_group_start_perf = start_times.get(self.tts_buffer_ids[0], now)
+            self.tts_group_end = self.tts_buffer_ends[-1]
+        else:
+            self.tts_buffer_start_time = None
+            self.tts_group_beg = None
+            self.tts_group_end = None
+            self.tts_group_start_perf = None
+
+    def _make_latency_record(self, ids=None, chunk_id=None, group_start_perf=None, buffer_enter=None):
         '''Builds a LatencyRecord for the current group, averaging STT times across all chunks in the group.'''
-        ids = self.tts_buffer_ids
+        if ids is None:
+            ids = self.tts_buffer_ids
+        if chunk_id is None:
+            chunk_id = self.tts_group_beg
+        if group_start_perf is None:
+            group_start_perf = self.tts_group_start_perf
+        if buffer_enter is None:
+            buffer_enter = self.tts_buffer_start_time
 
         # For the STT times not already in the latency records, calculate the average synth and destutter times across all chunks in the group and include those averages in the LatencyRecord for the group
         # Use vals in STT dicts
@@ -562,9 +622,9 @@ class ServerProcessor:
 
         # Add to latency record obj
         rec = LatencyRecord(
-            chunk_id = self.tts_group_beg,
-            group_start_perf = self.tts_group_start_perf,
-            buffer_enter = self.tts_buffer_start_time,
+            chunk_id = chunk_id,
+            group_start_perf = group_start_perf,
+            buffer_enter = buffer_enter,
             tts_queue_enter = time.perf_counter(),
             stt_synth_start = sum(stt_starts) / len(stt_starts) if stt_starts else None,
             stt_synth_end = sum(stt_ends) / len(stt_ends) if stt_ends else None,
@@ -586,7 +646,7 @@ class ServerProcessor:
         return rec
 
     def group_and_put_to_tts(self, o):
-        '''Do prosody-based group enqueuing rather than direct TTS queuing'''
+        '''Does prosody-based group enqueuing + breaks based on punctuation model'''
         text = o[2].strip()
         if not text:
             return
@@ -605,31 +665,19 @@ class ServerProcessor:
         self.tts_group_end = o[1]
         self.tts_text_buffer.append(text)
         self.tts_buffer_ids.append(o[0])
+        self.tts_buffer_ends.append(o[1])
 
         full_text = " ".join(self.tts_text_buffer).strip()  # add to text buffer
-        word_count = len(full_text.split())
 
-        # Determine whether conditions for grouping / pushing are met
-        ends_cleanly = len(text) > 0 and text[-1] in TTS_END_PUNCT
+        # ask the punctuation model where sentence endings are
+        break_idx = self._punct_break_index(full_text)
         waited_too_long = (now - self.tts_buffer_start_time) >= TTS_MAX_WAIT_SEC
 
-        if ends_cleanly or waited_too_long:
-            if ARTIFIC_INTON and full_text and full_text[-1] not in TTS_END_PUNCT:
-                full_text += "-"  # artificially comma add for better intonation in TTS - "continuation" not pause
+        if break_idx is not None:
+            self._flush_group_through(break_idx, now)
 
-            grouped_o = (self.tts_group_beg, self.tts_group_end, full_text)
-
-            # Create LatencyRecord obj for this group using STT times
-            rec = self._make_latency_record()
-            self.tts_queue.put((grouped_o, rec))
-            logger.info(f'TTS grouped chunk queued: {full_text!r}')
-
-            self.tts_text_buffer = []
-            self.tts_buffer_start_time = None
-            self.tts_group_beg = None
-            self.tts_group_end = None
-            self.tts_group_start_perf = None
-            self.tts_buffer_ids = []
+        elif waited_too_long:
+            self._flush_group_through(len(self.tts_text_buffer) - 1, now, fallback_char='-')
 
 
     def put_to_tts(self, o):
@@ -659,6 +707,10 @@ class ServerProcessor:
 
             now = time.perf_counter()
 
+            # o[0] is None both when the person is truly quiet and when whisper just has not agreed on new words yet, those are not the same thing, so check the actual gate instead of guessing off o[0]
+            if self.online_asr_proc.energy_gate.is_open:
+                self.last_text_received_time = now
+
             stt_synth_t1 = time.perf_counter()
             logger.info(f'[LATENCY] STT processing took {stt_synth_t1 - stt_synth_t0:.3f}s')
 
@@ -680,8 +732,6 @@ class ServerProcessor:
                 # Find average start time perf counter and add to global tuple with ID
                 avg_start_time = calc_avg(startTimes)
                 start_times[o[0]] = avg_start_time
-
-                self.last_text_received_time = now
 
                 # ============== STT DESTUTTERING LOGIC ================ #
 
@@ -743,6 +793,10 @@ class ServerProcessor:
                 except BrokenPipeError:
                     logger.info("broken pipe -- connection closed?")
                     break
+
+                except Exception as e:
+                    # one bad chunk shouldn't kill transcription for rest of session, log and continue
+                    logger.error(f'send_result failed on this chunk, skipping it and continuing: {e}')
 
             else:
                 if TTS_GROUPING_ENABLED and self.tts_text_buffer and (now - self.last_text_received_time) > self.SILENCE_TIMEOUT:
@@ -1013,13 +1067,6 @@ class Server:
                     logger.debug("GENERATING TTS audio...")
                     tts_synth_t0 = time.perf_counter()
 
-                    # Removed this because too blunt
-                    # # Artificially normalize text by adding periods to pauses in text so TTS better captures intonation
-                    # if ARTIFIC_INTON:
-                    #     if text and text[-1] not in TTS_END_PUNCT:
-                    #         text += ","
-
-                    # wav = tts.tts(text)
                     wav = synthesize_text(text)
                     tts_synth_t1 = time.perf_counter()
                     rec.tts_synth_start = tts_synth_t0
