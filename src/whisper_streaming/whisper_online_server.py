@@ -670,10 +670,15 @@ class ServerProcessor:
         full_text = " ".join(self.tts_text_buffer).strip()  # add to text buffer
 
         # ask the punctuation model where sentence endings are
+        punct_t0 = time.perf_counter()
         break_idx = self._punct_break_index(full_text)
+        punct_t1 = time.perf_counter()
+        logger.info(f'[LATENCY] Punctuation check took {punct_t1 - punct_t0:.3f}s on {len(full_text.split())} words')
+
         waited_too_long = (now - self.tts_buffer_start_time) >= TTS_MAX_WAIT_SEC
 
-        if break_idx is not None:
+        # only trust a break once at least one more real fragment exists past it, aka the model already had a chance to extend the sentence into that fragment and chose not to
+        if break_idx is not None and break_idx < len(self.tts_text_buffer) - 1:
             self._flush_group_through(break_idx, now)
 
         elif waited_too_long:
@@ -803,15 +808,15 @@ class ServerProcessor:
                     logger.info(f'\n\n\n[TIMEOUT FLUSH] Silence timeout of {self.SILENCE_TIMEOUT}s reached. Flushing buffer.\n\n\n')
                     self.flush_tts_group()
 
-        if TTS_GROUPING_ENABLED:  # flush if leftover stuff left in tts buffer
-            self.flush_tts_group()
-
         # Stop background threads — _destutter_loop will drain the deque then
         # send a None sentinel to _processed_queue automatically
         self._receive_thread_running = False
 
         o = online.finish()  # this should be working
-        self.send_result(o)
+        self.send_result(o)  # flush comes after this not before bc this can still add more
+
+        if TTS_GROUPING_ENABLED:
+            self.flush_tts_group()
 
 def calc_avg(l):
     '''Calculates the average given a list of floats'''
