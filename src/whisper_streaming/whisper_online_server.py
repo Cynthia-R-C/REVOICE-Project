@@ -131,7 +131,7 @@ COQUI_MODEL = 'tts_models/en/ljspeech/fast_pitch'
 
 # Melo settings
 MELO_LANGUAGE = 'EN'
-MELO_SPEAKER = 'EN-Default'
+MELO_SPEAKER = 'EN-US'
 MELO_SPEED = 0.8
 
 # ===== Adaptive Slowdown ===== #
