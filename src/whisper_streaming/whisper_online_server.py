@@ -300,6 +300,7 @@ class ServerProcessor:
 
         self.out_file = out_file  # for storing transcription results in a text file; None if not toggled on
         self.tts_queue = tts_queue  # queue for TTS text to be sent to TTS client
+        self.punct_queue = queue.Queue()  # queue for tts buffering + punctuation model work, runs on its own thread
 
         self.last_end = None
 
@@ -511,7 +512,7 @@ class ServerProcessor:
 
             # Toggle between grouping and not grouping
             if TTS_GROUPING_ENABLED:
-                self.group_and_put_to_tts(o)
+                self.punct_queue.put(('commit', o))  # hand off to the punctuation worker thread
             else:
                 self.put_to_tts(o)
         
@@ -520,6 +521,30 @@ class ServerProcessor:
                 self.out_file.write(o[2])
                 self.out_file.flush()  # flush immediately so partial transcripts survive crashes
 
+    def _punct_worker_loop(self):
+        '''Runs tts buffering + punctuation model on its own thread, keeps whisper from waiting on it'''
+        while True:
+            item = self.punct_queue.get()
+            if item is None:
+                self.punct_queue.task_done()
+                break
+            kind, payload = item
+            try:
+                if kind == 'commit':
+                    self.group_and_put_to_tts(payload)
+                elif kind == 'check_silence':
+                    now = time.perf_counter()
+                    if self.tts_text_buffer and (now - self.last_text_received_time) > self.SILENCE_TIMEOUT:
+                        logger.info(f'\n\n\n[TIMEOUT FLUSH] Silence timeout of {self.SILENCE_TIMEOUT}s reached. Flushing buffer.\n\n\n')
+                        self.flush_tts_group()
+                elif kind == 'final_flush':
+                    if TTS_GROUPING_ENABLED:
+                        self.flush_tts_group()
+            except Exception as e:
+                # one bad item shouldn't kill this thread for rest of session
+                logger.error(f'Punctuation worker failed on this item, skipping it and continuing: {e}')
+            finally:
+                self.punct_queue.task_done()
 
     def flush_tts_group(self):
         '''Force any buffered grouped TTS text into the queue.'''
@@ -527,23 +552,22 @@ class ServerProcessor:
         # If empty
         if not self.tts_text_buffer:
             return
-        
+
         self._flush_group_through(len(self.tts_text_buffer) - 1, time.perf_counter(), tag='[FLUSH] Flushed final TTS grouped chunk')
 
 
     def _punct_break_index(self, full_text):
-        '''Asks the punctuation model where a real sentence ending falls, returns the buffer fragment index it lands on or None'''
-
+        '''Asks the punctuation model where a real sentence ending falls, returns the (fragment index, labeled words) or (None, None)'''
         words = full_text.split()
         try:
             clean = punct_model.preprocess(full_text)
             labeled = punct_model.predict(clean)
         except Exception as e:
             logger.warning(f'Punctuation model failed, fall back on the backup timer: {e}')
-            return None
+            return None, None
 
         if len(labeled) != len(words):
-            return None  # don't try to line up for now
+            return None, None  # don't try to line up for now
 
         # figure out which word index each buffered fragment ends on
         frag_word_end = []
@@ -554,11 +578,23 @@ class ServerProcessor:
 
         for frag_idx, word_idx in enumerate(frag_word_end):
             if labeled[word_idx][1] in '.?':
-                return frag_idx
-        return None
+                return frag_idx, labeled
+        return None, labeled
 
-    def _flush_group_through(self, last_idx, now, fallback_char='.', tag='TTS grouped chunk queued'):
-        '''Flushes buffered fragments 0 through last_idx using the punctuation model, keeps anything after that buffered for next time'''
+    def _join_labeled(self, labeled):
+        '''Turns (word, label, score) tuple back into one punctuated string, same join logic the model package uses'''
+        result = ""
+        for word, label, _ in labeled:
+            result += word
+            if label == "0":
+                result += " "
+            if label in ".,?-:":
+                result += label + " "
+        return result.strip()
+
+    def _flush_group_through(self, last_idx, now, labeled=None, fallback_char='.', tag='TTS grouped chunk queued'):
+        '''Flushes buffered fragments 0 through last_idx, keeps anything after that buffered for next time. 
+        Param labeled = reuse the preductions with more context'''
         flush_text = " ".join(self.tts_text_buffer[:last_idx + 1]).strip()
         if not flush_text:
             return
@@ -566,12 +602,16 @@ class ServerProcessor:
         flush_ids = self.tts_buffer_ids[:last_idx + 1]
         flush_ends = self.tts_buffer_ends[:last_idx + 1]
 
-        # restore_punctuation already preprocesses the text itself, feeding it already preprocessed text was the bug that crashed the whole stt thread last run
-        try:
-            punctuated = punct_model.restore_punctuation(flush_text)
-        except Exception as e:
-            logger.warning(f'Punctuation model failed on final flush, sending the raw text instead: {e}')
-            punctuated = flush_text
+        if labeled is not None:
+            word_count = sum(len(frag.split()) for frag in self.tts_text_buffer[:last_idx + 1])
+            punctuated = self._join_labeled(labeled[:word_count])
+        else:
+            # restore_punctuation already preprocesses the text itself, feeding it already preprocessed text was the bug that crashed the whole stt thread last run
+            try:
+                punctuated = punct_model.restore_punctuation(flush_text)
+            except Exception as e:
+                logger.warning(f'Punctuation model failed on final flush, sending the raw text instead: {e}')
+                punctuated = flush_text
 
         if ARTIFIC_INTON and punctuated and punctuated[-1].isalnum():
             punctuated += fallback_char  # the model left this ending on a plain word, so fall back on this instead
@@ -671,7 +711,7 @@ class ServerProcessor:
 
         # ask the punctuation model where sentence endings are
         punct_t0 = time.perf_counter()
-        break_idx = self._punct_break_index(full_text)
+        break_idx, labeled = self._punct_break_index(full_text)
         punct_t1 = time.perf_counter()
         logger.info(f'[LATENCY] Punctuation check took {punct_t1 - punct_t0:.3f}s on {len(full_text.split())} words')
 
@@ -679,7 +719,7 @@ class ServerProcessor:
 
         # only trust a break once at least one more real fragment exists past it, aka the model already had a chance to extend the sentence into that fragment and chose not to
         if break_idx is not None and break_idx < len(self.tts_text_buffer) - 1:
-            self._flush_group_through(break_idx, now)
+            self._flush_group_through(break_idx, now, labeled=labeled)
 
         elif waited_too_long:
             self._flush_group_through(len(self.tts_text_buffer) - 1, now, fallback_char='-')
@@ -702,6 +742,10 @@ class ServerProcessor:
         self.online_asr_proc.init()
         # clear audio buffer for new session
         destutterer_stt.reset_aud_buffer()
+
+        # this thread does the tts buffering + punctuation work off the main loop
+        Thread(target=self._punct_worker_loop, daemon=True).start()
+
         while True:
             a, startTimes = self.receive_audio_chunk()
             if a is None:
@@ -804,9 +848,8 @@ class ServerProcessor:
                     logger.error(f'send_result failed on this chunk, skipping it and continuing: {e}')
 
             else:
-                if TTS_GROUPING_ENABLED and self.tts_text_buffer and (now - self.last_text_received_time) > self.SILENCE_TIMEOUT:
-                    logger.info(f'\n\n\n[TIMEOUT FLUSH] Silence timeout of {self.SILENCE_TIMEOUT}s reached. Flushing buffer.\n\n\n')
-                    self.flush_tts_group()
+                if TTS_GROUPING_ENABLED:
+                    self.punct_queue.put(('check_silence', None))  # worker thread checks its own buffer state
 
         # Stop background threads — _destutter_loop will drain the deque then
         # send a None sentinel to _processed_queue automatically
@@ -816,7 +859,10 @@ class ServerProcessor:
         self.send_result(o)  # flush comes after this not before bc this can still add more
 
         if TTS_GROUPING_ENABLED:
-            self.flush_tts_group()
+            self.punct_queue.put(('final_flush', None))
+
+        self.punct_queue.join()   # wait for worker to catch up on stuff queued above
+        self.punct_queue.put(None)   # stop signal
 
 def calc_avg(l):
     '''Calculates the average given a list of floats'''
