@@ -116,14 +116,14 @@ CLIENT_PREBUFFER_SECS = 3.5  # MUST match PREBUFFER_SECS in coqui_realtime_clien
 # ======= Other Toggles ======= #
 SAVE_TRANSCRIPT = True
 tts_flag = False  # becomes true when a TTS client connects to the server
-RVC_FLAG = False   # choose whether to enable RVC or not
+RVC_FLAG = True   # choose whether to enable RVC or not
 TXT_DESTUT = True # whether or not to do text destuttering
 AUD_DESTUT = True  # whether or not to do audio 
 SAVE_AUD_DESTUT_OUTPUT = True  # save post-audio-destutter audio to a wav for inspection
 USE_MODEL_FOR_TXT = False   # whether to use the model for text destuttering at all
 
-USE_COQUI = False
-USE_MELO = True
+USE_COQUI = True
+USE_MELO = False
 
 if USE_COQUI and USE_MELO:  # just in case
     raise ValueError("Do not set both USE_COQUI and USE_MELO to True.")
@@ -136,7 +136,9 @@ elif USE_MELO:
 
 # Coqui settings
 # TTS_MODEL = 'tts_models/multilingual/multi-dataset/xtts_v2'
-COQUI_MODEL = 'tts_models/en/ljspeech/fast_pitch'
+# COQUI_MODEL = 'tts_models/en/ljspeech/fast_pitch'
+COQUI_MODEL = 'tts_models/en/vctk/vits'
+COQUI_SPEAKER = 'p230'   # only used if COQUI_MODEL is multi-speaker, ignored otherwise
 
 # Melo settings
 MELO_LANGUAGE = 'EN'
@@ -195,6 +197,8 @@ def main():
         tts = CoquiTTS(COQUI_MODEL).to(device)
         TTS_SR = tts.synthesizer.output_sample_rate
         melo_speaker_ids = None
+        if tts.is_multi_speaker:
+            logger.info(f'COQUI_MODEL is multi-speaker, using COQUI_SPEAKER={COQUI_SPEAKER!r}. Full speaker list: {tts.speakers}')
 
     elif USE_MELO:
         tts = MeloTTS(language=MELO_LANGUAGE, device=device)
@@ -890,6 +894,8 @@ def synthesize_text(text):
     '''Helper function for TTS synthesis'''
 
     if USE_COQUI:
+        if tts.is_multi_speaker:
+            return tts.tts(text, speaker=COQUI_SPEAKER)
         return tts.tts(text)
 
     elif USE_MELO:

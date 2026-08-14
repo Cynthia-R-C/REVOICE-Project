@@ -140,6 +140,10 @@ class RVC:
 
         self.fifo = np.zeros((0,CHANNELS), dtype=np.float32)  # FIFO buffer for audio chunks
 
+    def set_pitch_key(self, key):
+        '''Sets the pitch shift (semitones) rtrvc will use on the NEXT vc() call'''
+        self.gui.rvc.f0_up_key = key
+
     def vc(self, audio_data: np.ndarray) -> np.ndarray:
         '''Runs RVC on given audio_data numpy array and returns converted audio as numpy array
         audio_data: 2D numpy array (mono) float32; shape = (block_frame, 1)'''

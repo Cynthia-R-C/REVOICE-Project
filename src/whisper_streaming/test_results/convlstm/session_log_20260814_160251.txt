@@ -1,0 +1,24 @@
+[SESSION LOG] Saving full terminal output to: C:\Users\crc24\Documents\VS_Code_Python_Folder\ScienceFair2025\src\whisper_streaming\test_results\convlstm\session_log_20260814_160251.txt
+INFO	Loading Whisper large-v3-turbo model for en...
+INFO	done. It took 2.86 seconds.
+INFO	COQUI_MODEL is multi-speaker, using COQUI_SPEAKER='p230'. Full speaker list: ['ED\n', 'p225', 'p226', 'p227', 'p228', 'p229', 'p230', 'p231', 'p232', 'p233', 'p234', 'p236', 'p237', 'p238', 'p239', 'p240', 'p241', 'p243', 'p244', 'p245', 'p246', 'p247', 'p248', 'p249', 'p250', 'p251', 'p252', 'p253', 'p254', 'p255', 'p256', 'p257', 'p258', 'p259', 'p260', 'p261', 'p262', 'p263', 'p264', 'p265', 'p266', 'p267', 'p268', 'p269', 'p270', 'p271', 'p272', 'p273', 'p274', 'p275', 'p276', 'p277', 'p278', 'p279', 'p280', 'p281', 'p282', 'p283', 'p284', 'p285', 'p286', 'p287', 'p288', 'p292', 'p293', 'p294', 'p295', 'p297', 'p298', 'p299', 'p300', 'p301', 'p302', 'p303', 'p304', 'p305', 'p306', 'p307', 'p308', 'p310', 'p311', 'p312', 'p313', 'p314', 'p316', 'p317', 'p318', 'p323', 'p326', 'p329', 'p330', 'p333', 'p334', 'p335', 'p336', 'p339', 'p340', 'p341', 'p343', 'p345', 'p347', 'p351', 'p360', 'p361', 'p362', 'p363', 'p364', 'p374', 'p376']
+C:\Users\crc24\miniconda3\envs\torch_venv\lib\site-packages\transformers\pipelines\token_classification.py:170: UserWarning: `grouped_entities` is deprecated and will be removed in version v5.0.0, defaulted to `aggregation_strategy="none"` instead.
+  warnings.warn(
+C:\Users\crc24\miniconda3\envs\torch_venv\lib\site-packages\google\auth\__init__.py:54: FutureWarning: You are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.
+  warnings.warn(eol_message.format("3.9"), FutureWarning)
+C:\Users\crc24\miniconda3\envs\torch_venv\lib\site-packages\google\oauth2\__init__.py:40: FutureWarning: You are using a Python version 3.9 past its end of life. Google will update google-auth with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade your Python version, and then update google-auth.
+  warnings.warn(eol_message.format("3.9"), FutureWarning)
+C:\Users\crc24\miniconda3\envs\torch_venv\lib\site-packages\google\api_core\_python_version_support.py:234: FutureWarning: You are using a non-supported Python version (3.9.23). Google will not post any further updates to google.api_core supporting this Python version. Please upgrade to the latest Python version, or at least Python 3.10, and then update google.api_core.
+  warnings.warn(message, FutureWarning)
+C:\Users\crc24\miniconda3\envs\torch_venv\lib\site-packages\torch\nn\utils\weight_norm.py:143: FutureWarning: `torch.nn.utils.weight_norm` is deprecated in favor of `torch.nn.utils.parametrizations.weight_norm`.
+  WeightNorm.apply(module, name, dim)
+WARNING	Whisper is not warmed up. The first chunk processing may take longer.
+INFO	Listening on('localhost', 9000)
+INFO	Connected to client on ('127.0.0.1', 61598)
+INFO	tts client has connected.
+TTS client connected.
+INFO	Warming up TTS and RVC models...
+cuda_is_available: True
+Index search FAILED or disabled
+Loading rmvpe model
+ERROR	RVC Thread Error: [Errno 2] No such file or directory: 'C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\Retrieval-based-Voice-Conversion-WebUI\\assets\\rmvpe\\rmvpe.pt'
