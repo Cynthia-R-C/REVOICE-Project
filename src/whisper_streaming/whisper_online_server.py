@@ -104,10 +104,19 @@ STATS_PATH = f'test_results/{GROUP}/stats.txt'
 AUD_DESTUT_OUTPUT_PATH = f'test_results/{GROUP}/aud_destut_output.wav'
 
 
+# ===== Adaptive Slowdown ===== #
+PITCH_STRETCH_ENABLED = True
+STRETCH_MIN = 1.0    # healthy buffer estimate -> no stretch
+STRETCH_MAX = 1.18   # low buffer estimate -> stretch this much to buy time
+STRETCH_LOW_WATER_SECS = 1.5
+STRETCH_HIGH_WATER_SECS = 4.0
+CLIENT_PREBUFFER_SECS = 3.5  # MUST match PREBUFFER_SECS in coqui_realtime_client.py - can't see the client's actual buffer so estimate it off own send timestamps + this constant
+
+
 # ======= Other Toggles ======= #
 SAVE_TRANSCRIPT = True
 tts_flag = False  # becomes true when a TTS client connects to the server
-RVC_FLAG = True   # choose whether to enable RVC or not
+RVC_FLAG = False   # choose whether to enable RVC or not
 TXT_DESTUT = True # whether or not to do text destuttering
 AUD_DESTUT = True  # whether or not to do audio 
 SAVE_AUD_DESTUT_OUTPUT = True  # save post-audio-destutter audio to a wav for inspection
@@ -133,14 +142,6 @@ COQUI_MODEL = 'tts_models/en/ljspeech/fast_pitch'
 MELO_LANGUAGE = 'EN'
 MELO_SPEAKER = 'EN-US'
 MELO_SPEED = 0.8
-
-# ===== Adaptive Slowdown ===== #
-PITCH_STRETCH_ENABLED = True
-STRETCH_MIN = 1.0    # healthy buffer estimate -> no stretch
-STRETCH_MAX = 1.18   # low buffer estimate -> stretch this much to buy time
-STRETCH_LOW_WATER_SECS = 1.5
-STRETCH_HIGH_WATER_SECS = 4.0
-CLIENT_PREBUFFER_SECS = 3.5  # MUST match PREBUFFER_SECS in coqui_realtime_client.py - we can't see the client's actual buffer so we estimate it off our own send timestamps + this constant
 
 TTS_GROUPING_ENABLED = True
 ARTIFIC_INTON = True   # whether to add a fallback dash or period when the punctuation model does not find a real ending in time
@@ -1143,21 +1144,20 @@ class Server:
                     #  receive_audio_chunk — see destutterer_stt.aud_destutter_chunk)
 
 
+                    # adaptive stretch, now runs regardless of RVC_FLAG
+                    f0_key = BASE_PITCH
+                    if PITCH_STRETCH_ENABLED:
+                        depth_est = estimate_client_buffer_secs(buffer_state)
+                        stretch = stretch_factor_for_depth(depth_est)
+                        wav = stretch_audio_for_rvc(wav, stretch)
+                        f0_key = BASE_PITCH + get_pitch_correction(stretch)
+                        logger.info(f'[STRETCH] est buffer {depth_est:.2f}s -> stretch {stretch:.3f}x -> f0_up_key {f0_key:.2f}')
+
                     # RVC logic (if flag enabled)
                     if RVC_FLAG:
                         # Only use RVC if audio is long enough to be meaningful
                         min_samples = 2000  # ~0.125s at 16kHz
                         if wav.shape[0] >= min_samples:
-
-                            # adaptive stretch
-                            f0_key = BASE_PITCH
-                            if PITCH_STRETCH_ENABLED:
-                                depth_est = estimate_client_buffer_secs(buffer_state)
-                                stretch = stretch_factor_for_depth(depth_est)
-                                wav = stretch_audio_for_rvc(wav, stretch)
-                                f0_key = BASE_PITCH + get_pitch_correction(stretch)
-                                logger.info(f'[STRETCH] est buffer {depth_est:.2f}s -> stretch {stretch:.3f}x -> f0_up_key {f0_key:.2f}')
-
                             # Stamp RVC queue enter and put in RVC queue
                             rec.rvc_queue_enter = time.perf_counter()
                             self.rvc_queue.put((wav, rec, f0_key))
