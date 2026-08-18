@@ -265,7 +265,7 @@ class GUIConfig:
     def __init__(self) -> None:
         self.pth_path: str = "C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\src\\whisper_streaming\\rvc_voice_models\\mi-test_e400_s19200.pth"   # hardcoded for now
         self.index_path: str = "C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\src\\whisper_streaming\\rvc_voice_models\\added_IVF1197_Flat_nprobe_1_mi-test_v1.index"  # hardcoded for now
-        self.pitch: int = 3
+        self.pitch: int = 0
         self.formant=0.0
         self.sr_type: str = "sr_model"
         self.block_time: float = 1  # s

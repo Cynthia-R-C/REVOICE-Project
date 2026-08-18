@@ -135,11 +135,18 @@ elif USE_MELO:
     from melo.api import TTS as MeloTTS  # MeloTTS, which has better prosody control
 
 # Coqui settings
+
 # TTS_MODEL = 'tts_models/multilingual/multi-dataset/xtts_v2'
 # COQUI_MODEL = 'tts_models/en/ljspeech/fast_pitch'
-COQUI_MODEL = 'tts_models/en/vctk/vits'
+
+# COQUI_MODEL = 'tts_models/en/vctk/vits'
 COQUI_SPEAKER = 'p360'   # only used if COQUI_MODEL is multi-speaker, ignored otherwise
-COQUI_SPEED = 1.2   # the larger the values the slower
+# COQUI_SPEED = 1.2   # the larger the values the slower
+
+COQUI_MODEL = 'tts_models/multilingual/multi-dataset/xtts_v2'
+XTTS_SPEAKER_WAV = 'C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\src\\whisper_streaming\\XTTS_ref_clip.wav'
+XTTS_LANGUAGE = 'en'
+XTTS_SPEED = 1.0   # same direction as MELO_SPEED, smaller = slower
 
 # Melo settings
 MELO_LANGUAGE = 'EN'
@@ -159,7 +166,7 @@ def main():
     # Use global keywords so the rest of script can see these objects
     global args, asr, online, base_online, rvc_converter, min_chunk, size, language, BASE_PITCH
     global tts, TTS_SR, destutterer_stt, melo_speaker_ids
-    
+    global xtts_cond_latent, xtts_speaker_embedding
  
     # ======= Logging and Arguments ======= #
     logger = logging.getLogger(__name__)
@@ -197,10 +204,13 @@ def main():
     if USE_COQUI:
         tts = CoquiTTS(COQUI_MODEL).to(device)
         TTS_SR = tts.synthesizer.output_sample_rate
-        tts.synthesizer.tts_model.length_scale = COQUI_SPEED
         melo_speaker_ids = None
         if tts.is_multi_speaker:
             logger.info(f'COQUI_MODEL is multi-speaker, using COQUI_SPEAKER={COQUI_SPEAKER!r}. Full speaker list: {tts.speakers}')
+        if tts.is_multi_lingual:
+            global xtts_cond_latent, xtts_speaker_embedding
+            xtts_cond_latent, xtts_speaker_embedding = tts.synthesizer.tts_model.get_conditioning_latents(audio_path=[XTTS_SPEAKER_WAV])
+            logger.info('Computed XTTS conditioning latents once at startup, reusing for every call.')
 
     elif USE_MELO:
         tts = MeloTTS(language=MELO_LANGUAGE, device=device)
@@ -896,7 +906,12 @@ def synthesize_text(text):
     '''Helper function for TTS synthesis'''
 
     if USE_COQUI:
-        if tts.is_multi_speaker:
+        if tts.is_multi_lingual:
+            out = tts.synthesizer.tts_model.inference(
+                text, XTTS_LANGUAGE, xtts_cond_latent, xtts_speaker_embedding, speed=XTTS_SPEED
+            )
+            return out['wav']
+        elif tts.is_multi_speaker:
             return tts.tts(text, speaker=COQUI_SPEAKER)
         return tts.tts(text)
 

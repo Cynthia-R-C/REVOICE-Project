@@ -1,0 +1,9 @@
+[SESSION LOG] Saving full terminal output to: C:\Users\crc24\Documents\VS_Code_Python_Folder\ScienceFair2025\src\whisper_streaming\test_results\convlstm\session_log_20260817_205320.txt
+INFO	Loading Whisper large-v3-turbo model for en...
+INFO	done. It took 9.61 seconds.
+Traceback (most recent call last):
+  File "C:\Users\crc24\Documents\VS_Code_Python_Folder\ScienceFair2025\src\whisper_streaming\whisper_online_server.py", line 1281, in <module>
+    main()
+  File "C:\Users\crc24\Documents\VS_Code_Python_Folder\ScienceFair2025\src\whisper_streaming\whisper_online_server.py", line 209, in main
+    logger.info(f'COQUI_MODEL is multi-speaker, using COQUI_SPEAKER={COQUI_SPEAKER!r}. Full speaker list: {tts.speakers}')
+NameError: name 'COQUI_SPEAKER' is not defined
