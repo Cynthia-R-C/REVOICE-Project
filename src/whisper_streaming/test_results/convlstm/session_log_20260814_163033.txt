@@ -1,0 +1,42 @@
+[SESSION LOG] Saving full terminal output to: C:\Users\crc24\Documents\VS_Code_Python_Folder\ScienceFair2025\src\whisper_streaming\test_results\convlstm\session_log_20260814_163033.txt
+INFO	Loading Whisper large-v3-turbo model for en...
+INFO	done. It took 2.85 seconds.
+C:\Users\crc24\miniconda3\envs\melo_env\lib\site-packages\torch\nn\utils\weight_norm.py:143: FutureWarning: `torch.nn.utils.weight_norm` is deprecated in favor of `torch.nn.utils.parametrizations.weight_norm`.
+  WeightNorm.apply(module, name, dim)
+C:\Users\crc24\miniconda3\envs\melo_env\lib\site-packages\huggingface_hub\file_download.py:945: FutureWarning: `resume_download` is deprecated and will be removed in version 1.0.0. Downloads always resume when possible. If you want to force a new download, use `force_download=True`.
+  warnings.warn(
+C:\Users\crc24\miniconda3\envs\melo_env\lib\site-packages\transformers\pipelines\token_classification.py:157: UserWarning: `grouped_entities` is deprecated and will be removed in version v5.0.0, defaulted to `aggregation_strategy="none"` instead.
+  warnings.warn(
+Index search enabled
+C:\Users\crc24\miniconda3\envs\melo_env\lib\site-packages\torch\nn\utils\weight_norm.py:143: FutureWarning: `torch.nn.utils.weight_norm` is deprecated in favor of `torch.nn.utils.parametrizations.weight_norm`.
+  WeightNorm.apply(module, name, dim)
+WARNING	Whisper is not warmed up. The first chunk processing may take longer.
+INFO	Listening on('localhost', 9000)
+INFO	Connected to client on ('127.0.0.1', 64499)
+INFO	tts client has connected.
+TTS client connected.
+INFO	Warming up TTS and RVC models...
+ > Text split to sentences.
+Warmup
+ > ===========================
+  0%|          | 0/1 [00:00<?, ?it/s]C:\Users\crc24\miniconda3\envs\melo_env\lib\site-packages\huggingface_hub\file_download.py:945: FutureWarning: `resume_download` is deprecated and will be removed in version 1.0.0. Downloads always resume when possible. If you want to force a new download, use `force_download=True`.
+  warnings.warn(
+100%|##| 1/1 [00:02<00:00,  2.95s/it]100%|##| 1/1 [00:02<00:00,  2.95s/it]
+cuda_is_available: True
+Loading rmvpe model
+Spent time: fea = 0.201s, index = 0.036s, f0 = 1.064s, model = 0.638s
+sola_offset = 0
+Infer time: 1.99
+Spent time: fea = 0.023s, index = 0.059s, f0 = 0.058s, model = 0.031s
+sola_offset = 145
+Infer time: 0.19
+Spent time: fea = 0.018s, index = 0.017s, f0 = 0.038s, model = 0.030s
+sola_offset = 110
+Infer time: 0.13
+Invalid index. You MUST use added_xxxx.index but not trained_xxxx.index!
+Spent time: fea = 0.018s, index = 0.020s, f0 = 0.037s, model = 0.035s
+sola_offset = 131
+Infer time: 0.11
+DEBUG	[RVC] TTS audio processed through RVC.
+INFO	[LATENCY] RVC processing took 2.424s
+INFO	Warmup chunk processed successfully.

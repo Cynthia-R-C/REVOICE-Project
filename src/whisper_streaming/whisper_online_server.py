@@ -138,12 +138,13 @@ elif USE_MELO:
 # TTS_MODEL = 'tts_models/multilingual/multi-dataset/xtts_v2'
 # COQUI_MODEL = 'tts_models/en/ljspeech/fast_pitch'
 COQUI_MODEL = 'tts_models/en/vctk/vits'
-COQUI_SPEAKER = 'p230'   # only used if COQUI_MODEL is multi-speaker, ignored otherwise
+COQUI_SPEAKER = 'p360'   # only used if COQUI_MODEL is multi-speaker, ignored otherwise
+COQUI_SPEED = 1.2   # the larger the values the slower
 
 # Melo settings
 MELO_LANGUAGE = 'EN'
 MELO_SPEAKER = 'EN-US'
-MELO_SPEED = 0.8
+MELO_SPEED = 0.8   # x speed, the smaller the slower
 
 TTS_GROUPING_ENABLED = True
 ARTIFIC_INTON = True   # whether to add a fallback dash or period when the punctuation model does not find a real ending in time
@@ -196,6 +197,7 @@ def main():
     if USE_COQUI:
         tts = CoquiTTS(COQUI_MODEL).to(device)
         TTS_SR = tts.synthesizer.output_sample_rate
+        tts.synthesizer.tts_model.length_scale = COQUI_SPEED
         melo_speaker_ids = None
         if tts.is_multi_speaker:
             logger.info(f'COQUI_MODEL is multi-speaker, using COQUI_SPEAKER={COQUI_SPEAKER!r}. Full speaker list: {tts.speakers}')
