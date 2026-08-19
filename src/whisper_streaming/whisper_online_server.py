@@ -144,7 +144,7 @@ COQUI_SPEAKER = 'p360'   # only used if COQUI_MODEL is multi-speaker, ignored ot
 # COQUI_SPEED = 1.2   # the larger the values the slower
 
 COQUI_MODEL = 'tts_models/multilingual/multi-dataset/xtts_v2'
-XTTS_SPEAKER_WAV = 'C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\src\\whisper_streaming\\XTTS_ref_clip.wav'
+XTTS_SPEAKER_WAV = 'C:\\Users\\crc24\\Documents\\VS_Code_Python_Folder\\ScienceFair2025\\src\\whisper_streaming\\XTTS_ref_clip_2.wav'
 XTTS_LANGUAGE = 'en'
 XTTS_SPEED = 1.0   # same direction as MELO_SPEED, smaller = slower
 
@@ -907,8 +907,9 @@ def synthesize_text(text):
 
     if USE_COQUI:
         if tts.is_multi_lingual:
+            torch.manual_seed(42)   # fix randomness
             out = tts.synthesizer.tts_model.inference(
-                text, XTTS_LANGUAGE, xtts_cond_latent, xtts_speaker_embedding, speed=XTTS_SPEED
+                text, XTTS_LANGUAGE, xtts_cond_latent, xtts_speaker_embedding, speed=XTTS_SPEED, enable_text_splitting=True, temperature=0.4, repetition_penalty=6.0
             )
             return out['wav']
         elif tts.is_multi_speaker:

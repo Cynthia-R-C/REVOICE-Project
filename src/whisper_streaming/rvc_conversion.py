@@ -276,7 +276,7 @@ class GUIConfig:
         self.O_noise_reduce: bool = False
         self.use_pv: bool = False
         self.rms_mix_rate: float = 0.0
-        self.index_rate: float = 0.75
+        self.index_rate: float = 0.35
         self.n_cpu: int = 4
         self.f0method: str = "pm"
         # removed hostapi and device stuff
